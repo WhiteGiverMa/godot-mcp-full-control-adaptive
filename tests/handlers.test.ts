@@ -1460,6 +1460,242 @@ describe('Game command handlers — new tools (group, timer, particles, animatio
       expect(r.commandArgs).toEqual({ action: 'clear' });
     });
   });
+
+  // --- Batch 1: Networking + Input + System + Signals + Script ---
+  describe('handleGameHttpRequest', () => {
+    const argsFn = (a: any) => ({ url: a.url, method: a.method || 'GET' });
+    it('passes url and defaults method to GET', () => {
+      const r = fakeGameCommand(true, true, { url: 'http://example.com' }, argsFn);
+      expect(r.commandArgs).toEqual({ url: 'http://example.com', method: 'GET' });
+    });
+  });
+
+  describe('handleGameWebsocket', () => {
+    const argsFn = (a: any) => ({ action: a.action, ...(a.url ? { url: a.url } : {}) });
+    it('passes connect action with url', () => {
+      const r = fakeGameCommand(true, true, { action: 'connect', url: 'ws://localhost' }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'connect', url: 'ws://localhost' });
+    });
+  });
+
+  describe('handleGameMultiplayer', () => {
+    const argsFn = (a: any) => ({ action: a.action, ...(a.port !== undefined ? { port: a.port } : {}) });
+    it('passes create_server with port', () => {
+      const r = fakeGameCommand(true, true, { action: 'create_server', port: 8000 }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'create_server', port: 8000 });
+    });
+  });
+
+  describe('handleGameTouch', () => {
+    const argsFn = (a: any) => ({ action: a.action, x: a.x ?? 0, y: a.y ?? 0 });
+    it('passes press with coords', () => {
+      const r = fakeGameCommand(true, true, { action: 'press', x: 100, y: 200 }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'press', x: 100, y: 200 });
+    });
+  });
+
+  describe('handleGameInputState', () => {
+    const argsFn = (a: any) => ({ action: a.action || 'query' });
+    it('defaults to query action', () => {
+      const r = fakeGameCommand(true, true, {}, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'query' });
+    });
+  });
+
+  describe('handleGameListSignals', () => {
+    const argsFn = (a: any) => ({ node_path: a.nodePath });
+    it('passes node path', () => {
+      const r = fakeGameCommand(true, true, { nodePath: '/root/Player' }, argsFn);
+      expect(r.commandArgs).toEqual({ node_path: '/root/Player' });
+    });
+  });
+
+  describe('handleGameScript', () => {
+    const argsFn = (a: any) => ({ node_path: a.nodePath, action: a.action });
+    it('passes get_source action', () => {
+      const r = fakeGameCommand(true, true, { nodePath: '/root/P', action: 'get_source' }, argsFn);
+      expect(r.commandArgs).toEqual({ node_path: '/root/P', action: 'get_source' });
+    });
+  });
+
+  describe('handleGameWindow', () => {
+    const argsFn = (a: any) => ({ action: a.action || 'get', ...(a.width !== undefined ? { width: a.width } : {}) });
+    it('defaults to get action', () => {
+      const r = fakeGameCommand(true, true, {}, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'get' });
+    });
+  });
+
+  describe('handleGameOsInfo', () => {
+    it('sends empty args', () => {
+      const r = fakeGameCommand(true, true, {}, () => ({}));
+      expect(r.commandArgs).toEqual({});
+    });
+  });
+
+  describe('handleGameTimeScale', () => {
+    const argsFn = (a: any) => ({ action: a.action || 'get' });
+    it('defaults to get action', () => {
+      const r = fakeGameCommand(true, true, {}, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'get' });
+    });
+  });
+
+  describe('handleGameProcessMode', () => {
+    const argsFn = (a: any) => ({ node_path: a.nodePath, mode: a.mode });
+    it('passes mode', () => {
+      const r = fakeGameCommand(true, true, { nodePath: '/root/P', mode: 'always' }, argsFn);
+      expect(r.commandArgs).toEqual({ node_path: '/root/P', mode: 'always' });
+    });
+  });
+
+  describe('handleGameWorldSettings', () => {
+    const argsFn = (a: any) => ({ action: a.action || 'get', ...(a.gravity !== undefined ? { gravity: a.gravity } : {}) });
+    it('passes set with gravity', () => {
+      const r = fakeGameCommand(true, true, { action: 'set', gravity: 20 }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'set', gravity: 20 });
+    });
+  });
+
+  // --- Batch 2: 3D Rendering + Lighting + Sky + Physics ---
+  describe('handleGameCsg', () => {
+    const argsFn = (a: any) => ({ action: a.action, ...(a.csgType ? { csg_type: a.csgType } : {}) });
+    it('passes create with type', () => {
+      const r = fakeGameCommand(true, true, { action: 'create', csgType: 'box' }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'create', csg_type: 'box' });
+    });
+  });
+
+  describe('handleGameMeshInstance', () => {
+    const argsFn = (a: any) => ({ parent_path: a.parentPath, mesh_type: a.meshType });
+    it('passes mesh type', () => {
+      const r = fakeGameCommand(true, true, { parentPath: '/root', meshType: 'sphere' }, argsFn);
+      expect(r.commandArgs).toEqual({ parent_path: '/root', mesh_type: 'sphere' });
+    });
+  });
+
+  describe('handleGameLight3d', () => {
+    const argsFn = (a: any) => ({ action: a.action, ...(a.lightType ? { light_type: a.lightType } : {}) });
+    it('passes create with type', () => {
+      const r = fakeGameCommand(true, true, { action: 'create', lightType: 'omni' }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'create', light_type: 'omni' });
+    });
+  });
+
+  describe('handleGameSky', () => {
+    const argsFn = (a: any) => ({ action: a.action, ...(a.skyType ? { sky_type: a.skyType } : {}) });
+    it('passes create with sky type', () => {
+      const r = fakeGameCommand(true, true, { action: 'create', skyType: 'procedural' }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'create', sky_type: 'procedural' });
+    });
+  });
+
+  describe('handleGamePhysics3d', () => {
+    const argsFn = (a: any) => ({ action: a.action, ...(a.from ? { from: a.from } : {}) });
+    it('passes ray action', () => {
+      const r = fakeGameCommand(true, true, { action: 'ray', from: { x: 0, y: 0, z: 0 } }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'ray', from: { x: 0, y: 0, z: 0 } });
+    });
+  });
+
+  // --- Batch 3: 2D Systems + Animation Advanced + Audio Effects ---
+  describe('handleGameCanvas', () => {
+    const argsFn = (a: any) => ({ action: a.action, ...(a.parentPath ? { parent_path: a.parentPath } : {}) });
+    it('passes create_layer', () => {
+      const r = fakeGameCommand(true, true, { action: 'create_layer', parentPath: '/root' }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'create_layer', parent_path: '/root' });
+    });
+  });
+
+  describe('handleGameAnimationTree', () => {
+    const argsFn = (a: any) => ({ node_path: a.nodePath, action: a.action, ...(a.stateName ? { state_name: a.stateName } : {}) });
+    it('passes travel with state', () => {
+      const r = fakeGameCommand(true, true, { nodePath: '/root/AT', action: 'travel', stateName: 'run' }, argsFn);
+      expect(r.commandArgs).toEqual({ node_path: '/root/AT', action: 'travel', state_name: 'run' });
+    });
+  });
+
+  describe('handleGameAnimationControl', () => {
+    const argsFn = (a: any) => ({ node_path: a.nodePath, action: a.action });
+    it('passes get_info', () => {
+      const r = fakeGameCommand(true, true, { nodePath: '/root/AP', action: 'get_info' }, argsFn);
+      expect(r.commandArgs).toEqual({ node_path: '/root/AP', action: 'get_info' });
+    });
+  });
+
+  describe('handleGameAudioEffect', () => {
+    const argsFn = (a: any) => ({ action: a.action, bus_name: a.busName || 'Master' });
+    it('defaults bus to Master', () => {
+      const r = fakeGameCommand(true, true, { action: 'list' }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'list', bus_name: 'Master' });
+    });
+  });
+
+  describe('handleGameAudioBusLayout', () => {
+    const argsFn = (a: any) => ({ action: a.action, ...(a.busName ? { bus_name: a.busName } : {}) });
+    it('passes add with name', () => {
+      const r = fakeGameCommand(true, true, { action: 'add', busName: 'SFX' }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'add', bus_name: 'SFX' });
+    });
+  });
+
+  // --- Batch 4: Locale ---
+  describe('handleGameLocale', () => {
+    const argsFn = (a: any) => ({ action: a.action, ...(a.locale ? { locale: a.locale } : {}) });
+    it('passes set with locale', () => {
+      const r = fakeGameCommand(true, true, { action: 'set', locale: 'es' }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'set', locale: 'es' });
+    });
+  });
+
+  // --- Batch 5: UI Controls + Rendering + Resource Runtime ---
+  describe('handleGameUiControl', () => {
+    const argsFn = (a: any) => ({ node_path: a.nodePath, action: a.action });
+    it('passes grab_focus', () => {
+      const r = fakeGameCommand(true, true, { nodePath: '/root/Btn', action: 'grab_focus' }, argsFn);
+      expect(r.commandArgs).toEqual({ node_path: '/root/Btn', action: 'grab_focus' });
+    });
+  });
+
+  describe('handleGameUiText', () => {
+    const argsFn = (a: any) => ({ node_path: a.nodePath, action: a.action, ...(a.text !== undefined ? { text: a.text } : {}) });
+    it('passes set with text', () => {
+      const r = fakeGameCommand(true, true, { nodePath: '/root/LE', action: 'set', text: 'hello' }, argsFn);
+      expect(r.commandArgs).toEqual({ node_path: '/root/LE', action: 'set', text: 'hello' });
+    });
+  });
+
+  describe('handleGameUiPopup', () => {
+    const argsFn = (a: any) => ({ node_path: a.nodePath, action: a.action });
+    it('passes popup_centered', () => {
+      const r = fakeGameCommand(true, true, { nodePath: '/root/Dlg', action: 'popup_centered' }, argsFn);
+      expect(r.commandArgs).toEqual({ node_path: '/root/Dlg', action: 'popup_centered' });
+    });
+  });
+
+  describe('handleGameUiRange', () => {
+    const argsFn = (a: any) => ({ node_path: a.nodePath, action: a.action, ...(a.value !== undefined ? { value: a.value } : {}) });
+    it('passes set with value', () => {
+      const r = fakeGameCommand(true, true, { nodePath: '/root/Slider', action: 'set', value: 0.5 }, argsFn);
+      expect(r.commandArgs).toEqual({ node_path: '/root/Slider', action: 'set', value: 0.5 });
+    });
+  });
+
+  describe('handleGameRenderSettings', () => {
+    const argsFn = (a: any) => ({ action: a.action || 'get' });
+    it('defaults to get', () => {
+      const r = fakeGameCommand(true, true, {}, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'get' });
+    });
+  });
+
+  describe('handleGameResource', () => {
+    const argsFn = (a: any) => ({ action: a.action, path: a.path });
+    it('passes load with path', () => {
+      const r = fakeGameCommand(true, true, { action: 'load', path: 'res://icon.svg' }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'load', path: 'res://icon.svg' });
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1524,8 +1760,8 @@ describe('Tool dispatch switch statement', () => {
   it('every case returns await this.handle*', () => {
     const caseRegex = /case '(\w+)':\s*\n\s*return await this\.handle/g;
     const matches = [...sourceCode.matchAll(caseRegex)];
-    // Should match all 86 tools
-    expect(matches.length).toBe(86);
+    // Should match all 149 tools
+    expect(matches.length).toBe(149);
   });
 
   it('no case falls through without return', () => {

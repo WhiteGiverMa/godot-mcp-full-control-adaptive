@@ -8,7 +8,7 @@
 [![](https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white 'TypeScript')](https://www.typescriptlang.org/)
 [![](https://img.shields.io/badge/License-MIT-red.svg 'MIT License')](https://opensource.org/licenses/MIT)
 
-A comprehensive [Model Context Protocol](https://modelcontextprotocol.io/introduction) (MCP) server that gives AI assistants **full control** over the Godot game engine. **86 tools** spanning file I/O, runtime code execution, property inspection, scene manipulation, animation control, signal management, tweening, project creation, camera control, physics raycasting, and more.
+A comprehensive [Model Context Protocol](https://modelcontextprotocol.io/introduction) (MCP) server that gives AI assistants **full control** over the Godot game engine. **149 tools** spanning networking, 3D/2D rendering, UI controls, audio effects, animation trees, file I/O, runtime code execution, property inspection, scene manipulation, signal management, physics, project creation, and more.
 
 ## Acknowledgments
 
@@ -16,7 +16,7 @@ This project is built upon and extends [godot-mcp](https://github.com/Coding-Sol
 
 ## What's New (Improvements Over Original)
 
-The original godot-mcp provided 20 tools for basic project management and scene creation. This fork extends it to **86 tools** with the following major additions:
+The original godot-mcp provided 20 tools for basic project management and scene creation. This fork extends it to **149 tools** with the following major additions:
 
 ### Runtime Code Execution
 - **`game_eval`** - Execute arbitrary GDScript code in the running game with return values
@@ -104,6 +104,89 @@ The original godot-mcp provided 20 tools for basic project management and scene 
 - **`game_viewport`** - Create/configure SubViewport nodes
 - **`game_debug_draw`** - Draw debug geometry (lines, spheres, boxes)
 
+### Networking
+- **`game_http_request`** - HTTP GET/POST/PUT/DELETE with headers and body
+- **`game_websocket`** - WebSocket client connect/disconnect/send messages
+- **`game_multiplayer`** - ENet multiplayer create server/client/disconnect
+- **`game_rpc`** - Call or configure RPC methods on nodes
+
+### System & Window Control
+- **`game_script`** - Attach, detach, or get source of node scripts at runtime
+- **`game_window`** - Get/set window size, fullscreen, title, position
+- **`game_os_info`** - Get platform, locale, screen, adapter, memory info
+- **`game_time_scale`** - Get/set Engine.time_scale and timing info
+- **`game_process_mode`** - Set node process mode (pausable/always/disabled)
+- **`game_world_settings`** - Get/set gravity, physics FPS, and world settings
+
+### Advanced Signals & Input
+- **`game_list_signals`** - List all signals on a node with connections
+- **`game_await_signal`** - Await a signal with timeout and return args
+- **`game_touch`** - Simulate touch press/release/drag and gestures
+- **`game_input_state`** - Query pressed keys, mouse position, connected pads
+- **`game_input_action`** - Manage runtime InputMap actions and strength
+
+### 3D Rendering & Geometry
+- **`game_csg`** - Create/configure CSG nodes with boolean operations
+- **`game_multimesh`** - Create/configure MultiMeshInstance3D for instancing
+- **`game_procedural_mesh`** - Generate meshes via ArrayMesh from vertex data
+- **`game_light_3d`** - Create/configure 3D lights (directional/omni/spot)
+- **`game_mesh_instance`** - Create MeshInstance3D with primitive meshes
+- **`game_gridmap`** - GridMap set/get/clear cells and query used cells
+- **`game_3d_effects`** - Create ReflectionProbe, Decal, or FogVolume
+- **`game_gi`** - Create/configure VoxelGI or LightmapGI
+- **`game_path_3d`** - Create Path3D/Curve3D and manage curve points
+- **`game_sky`** - Create/configure Sky with procedural/physical sky
+- **`game_camera_attributes`** - Configure DOF, exposure, auto-exposure on camera
+- **`game_navigation_3d`** - Create/configure NavigationRegion3D and bake
+- **`game_physics_3d`** - Area3D queries and point/shape intersection tests
+
+### 2D Systems
+- **`game_canvas`** - Create/configure CanvasLayer and CanvasModulate
+- **`game_canvas_draw`** - 2D drawing: line/rect/circle/polygon/text/clear
+- **`game_light_2d`** - Create/configure 2D lights and light occluders
+- **`game_parallax`** - Create/configure ParallaxBackground and layers
+- **`game_shape_2d`** - Line2D/Polygon2D point manipulation
+- **`game_path_2d`** - Path2D/Curve2D management and AnimatedSprite2D
+- **`game_physics_2d`** - Area2D queries and 2D point/shape intersections
+
+### Advanced Animation
+- **`game_animation_tree`** - AnimationTree state machine travel and params
+- **`game_animation_control`** - AnimationPlayer seek/queue/speed/info control
+- **`game_skeleton_ik`** - SkeletonIK3D start/stop/set target position
+
+### Advanced Audio
+- **`game_audio_effect`** - Add/remove/configure audio bus effects
+- **`game_audio_bus_layout`** - Create/remove/reorder audio buses and routing
+- **`game_audio_spatial`** - Configure AudioStreamPlayer3D spatial properties
+
+### Editor & Project Tools
+- **`rename_file`** - Rename or move a file within the project
+- **`manage_resource`** - Read or modify .tres/.res resource files
+- **`create_script`** - Create a GDScript file from a template
+- **`manage_scene_signals`** - List/add/remove signal connections in .tscn files
+- **`manage_layers`** - List/set named layer definitions in project
+- **`manage_plugins`** - List/enable/disable editor plugins
+- **`manage_shader`** - Create or read .gdshader files
+- **`manage_theme_resource`** - Create/read/modify Theme .tres resources
+- **`set_main_scene`** - Set the main scene in project.godot
+- **`manage_scene_structure`** - Rename/duplicate/move nodes within .tscn scenes
+- **`manage_translations`** - List/add/remove translation files in project
+- **`game_locale`** - Set/get locale and translate strings at runtime
+
+### UI Controls
+- **`game_ui_control`** - Set focus, anchors, tooltip, mouse filter on Control
+- **`game_ui_text`** - LineEdit/TextEdit/RichTextLabel text operations
+- **`game_ui_popup`** - Show/hide/popup for Popup/Dialog/Window nodes
+- **`game_ui_tree`** - Tree control: get/select/collapse/add/remove items
+- **`game_ui_item_list`** - ItemList/OptionButton: get/select/add/remove items
+- **`game_ui_tabs`** - TabContainer/TabBar: get/set current tab
+- **`game_ui_menu`** - PopupMenu/MenuBar: add/remove/get menu items
+- **`game_ui_range`** - ProgressBar/Slider/SpinBox/ColorPicker get/set
+
+### Rendering & Resources
+- **`game_render_settings`** - Get/set MSAA, FXAA, TAA, scaling mode/scale
+- **`game_resource`** - Runtime resource load, save, or preload
+
 ### Robustness Improvements
 - **Reentrancy guard** - Prevents concurrent command processing during async operations
 - **Full type conversion** - Supports Vector2/3, Color, Quaternion, Basis, Transform2D/3D, AABB, Rect2, and all packed array types
@@ -111,7 +194,7 @@ The original godot-mcp provided 20 tools for basic project management and scene 
 - **PackedArray serialization** - Proper JSON arrays instead of string fallback
 - **Graceful error handling** - Scene read fallback to raw .tscn text on missing dependencies
 
-## All 86 Tools
+## All 149 Tools
 
 ### Project Management (7 tools)
 | Tool | Description |
@@ -182,12 +265,14 @@ The original godot-mcp provided 20 tools for basic project management and scene 
 | `game_change_scene` | Switch to a different scene |
 | `game_reparent_node` | Move a node to a new parent |
 
-### Runtime Signals (3 tools)
+### Runtime Signals (5 tools)
 | Tool | Description |
 |------|-------------|
 | `game_connect_signal` | Connect a signal to a method |
 | `game_disconnect_signal` | Disconnect a signal |
 | `game_emit_signal` | Emit a signal with arguments |
+| `game_list_signals` | List all signals on a node with connections |
+| `game_await_signal` | Await a signal with timeout and return args |
 
 ### Runtime Animation (2 tools)
 | Tool | Description |
@@ -218,7 +303,7 @@ The original godot-mcp provided 20 tools for basic project management and scene 
 | `game_get_errors` | Get new errors/warnings since last call |
 | `game_get_logs` | Get new print output since last call |
 
-### Enhanced Input (5 tools)
+### Enhanced Input (8 tools)
 | Tool | Description |
 |------|-------------|
 | `game_key_hold` | Hold a key down (no auto-release) |
@@ -226,6 +311,9 @@ The original godot-mcp provided 20 tools for basic project management and scene 
 | `game_scroll` | Mouse scroll wheel event |
 | `game_mouse_drag` | Drag between two points over N frames |
 | `game_gamepad` | Gamepad button or axis input |
+| `game_touch` | Simulate touch press/release/drag and gestures |
+| `game_input_state` | Query pressed keys, mouse position, connected pads |
+| `game_input_action` | Manage runtime InputMap actions and strength |
 
 ### Project Creation (4 tools)
 | Tool | Description |
@@ -266,6 +354,100 @@ The original godot-mcp provided 20 tools for basic project management and scene 
 | Tool | Description |
 |------|-------------|
 | `export_project` | Export a Godot project using a preset |
+
+### Networking (4 tools)
+| Tool | Description |
+|------|-------------|
+| `game_http_request` | HTTP GET/POST/PUT/DELETE with headers and body |
+| `game_websocket` | WebSocket client connect/disconnect/send messages |
+| `game_multiplayer` | ENet multiplayer create server/client/disconnect |
+| `game_rpc` | Call or configure RPC methods on nodes |
+
+### System & Window (6 tools)
+| Tool | Description |
+|------|-------------|
+| `game_script` | Attach, detach, or get source of node scripts |
+| `game_window` | Get/set window size, fullscreen, title, position |
+| `game_os_info` | Get platform, locale, screen, adapter, memory info |
+| `game_time_scale` | Get/set Engine.time_scale and timing info |
+| `game_process_mode` | Set node process mode (pausable/always/disabled) |
+| `game_world_settings` | Get/set gravity, physics FPS, and world settings |
+
+### 3D Rendering & Geometry (13 tools)
+| Tool | Description |
+|------|-------------|
+| `game_csg` | Create/configure CSG nodes with boolean operations |
+| `game_multimesh` | Create/configure MultiMeshInstance3D for instancing |
+| `game_procedural_mesh` | Generate meshes via ArrayMesh from vertex data |
+| `game_light_3d` | Create/configure 3D lights (directional/omni/spot) |
+| `game_mesh_instance` | Create MeshInstance3D with primitive meshes |
+| `game_gridmap` | GridMap set/get/clear cells and query used cells |
+| `game_3d_effects` | Create ReflectionProbe, Decal, or FogVolume |
+| `game_gi` | Create/configure VoxelGI or LightmapGI |
+| `game_path_3d` | Create Path3D/Curve3D and manage curve points |
+| `game_sky` | Create/configure Sky with procedural/physical sky |
+| `game_camera_attributes` | Configure DOF, exposure, auto-exposure on camera |
+| `game_navigation_3d` | Create/configure NavigationRegion3D and bake |
+| `game_physics_3d` | Area3D queries and point/shape intersection tests |
+
+### 2D Systems (7 tools)
+| Tool | Description |
+|------|-------------|
+| `game_canvas` | Create/configure CanvasLayer and CanvasModulate |
+| `game_canvas_draw` | 2D drawing: line/rect/circle/polygon/text/clear |
+| `game_light_2d` | Create/configure 2D lights and light occluders |
+| `game_parallax` | Create/configure ParallaxBackground and layers |
+| `game_shape_2d` | Line2D/Polygon2D point manipulation |
+| `game_path_2d` | Path2D/Curve2D management and AnimatedSprite2D |
+| `game_physics_2d` | Area2D queries and 2D point/shape intersections |
+
+### Advanced Animation (3 tools)
+| Tool | Description |
+|------|-------------|
+| `game_animation_tree` | AnimationTree state machine travel and params |
+| `game_animation_control` | AnimationPlayer seek/queue/speed/info control |
+| `game_skeleton_ik` | SkeletonIK3D start/stop/set target position |
+
+### Advanced Audio (3 tools)
+| Tool | Description |
+|------|-------------|
+| `game_audio_effect` | Add/remove/configure audio bus effects |
+| `game_audio_bus_layout` | Create/remove/reorder audio buses and routing |
+| `game_audio_spatial` | Configure AudioStreamPlayer3D spatial properties |
+
+### Editor & Project Tools (12 tools)
+| Tool | Description |
+|------|-------------|
+| `rename_file` | Rename or move a file within the project |
+| `manage_resource` | Read or modify .tres/.res resource files |
+| `create_script` | Create a GDScript file from a template |
+| `manage_scene_signals` | List/add/remove signal connections in .tscn files |
+| `manage_layers` | List/set named layer definitions in project |
+| `manage_plugins` | List/enable/disable editor plugins |
+| `manage_shader` | Create or read .gdshader files |
+| `manage_theme_resource` | Create/read/modify Theme .tres resources |
+| `set_main_scene` | Set the main scene in project.godot |
+| `manage_scene_structure` | Rename/duplicate/move nodes within .tscn scenes |
+| `manage_translations` | List/add/remove translation files in project |
+| `game_locale` | Set/get locale and translate strings at runtime |
+
+### UI Controls (8 tools)
+| Tool | Description |
+|------|-------------|
+| `game_ui_control` | Set focus, anchors, tooltip, mouse filter on Control |
+| `game_ui_text` | LineEdit/TextEdit/RichTextLabel text operations |
+| `game_ui_popup` | Show/hide/popup for Popup/Dialog/Window nodes |
+| `game_ui_tree` | Tree control: get/select/collapse/add/remove items |
+| `game_ui_item_list` | ItemList/OptionButton: get/select/add/remove items |
+| `game_ui_tabs` | TabContainer/TabBar: get/set current tab |
+| `game_ui_menu` | PopupMenu/MenuBar: add/remove/get menu items |
+| `game_ui_range` | ProgressBar/Slider/SpinBox/ColorPicker get/set |
+
+### Rendering & Resources (2 tools)
+| Tool | Description |
+|------|-------------|
+| `game_render_settings` | Get/set MSAA, FXAA, TAA, scaling mode/scale |
+| `game_resource` | Runtime resource load, save, or preload |
 
 ## Requirements
 
@@ -371,13 +553,13 @@ The server uses two communication channels:
 
 ## Testing
 
-The project uses [Vitest](https://vitest.dev/) with 246 tests across 3 files:
+The project uses [Vitest](https://vitest.dev/) with 390 tests across 3 files:
 
 | File | Tests | What it covers |
 |------|-------|----------------|
 | `tests/utils.test.ts` | 31 | Parameter mappings, normalization, path validation, error responses, version detection |
-| `tests/tool-definitions.test.ts` | 75 | All 86 tools defined, schemas valid, names unique, descriptions < 80 chars |
-| `tests/handlers.test.ts` | 140 | Game command arg transforms, required-param validation, headless op path checks, source structure |
+| `tests/tool-definitions.test.ts` | 157 | All 149 tools defined, schemas valid, names unique, descriptions < 80 chars |
+| `tests/handlers.test.ts` | 202 | Game command arg transforms, required-param validation, headless op path checks, source structure |
 
 ```bash
 npm test          # run once
@@ -429,4 +611,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Credits
 
 - **Original project**: [godot-mcp](https://github.com/Coding-Solo/godot-mcp) by [Solomon Elias (Coding-Solo)](https://github.com/Coding-Solo) - provided the foundational MCP server architecture, headless operations system, and TCP interaction framework
-- **Extended by**: [Tugcan Topaloglu](https://github.com/tugcantopaloglu) - added 47 new tools for file I/O, runtime code execution, node manipulation, signals, animation, tweening, project creation, camera control, physics raycasting, enhanced input, and comprehensive type conversion
+- **Extended by**: [Tugcan Topaloglu](https://github.com/tugcantopaloglu) - extended to 149 tools covering networking, 3D/2D rendering, UI controls, audio effects, animation trees, file I/O, runtime code execution, node manipulation, signals, project creation, camera control, physics, and comprehensive type conversion

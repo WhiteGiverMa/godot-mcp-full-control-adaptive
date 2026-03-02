@@ -37,6 +37,29 @@ const ALL_TOOL_NAMES = [
   'game_manage_group', 'game_create_timer', 'game_set_particles', 'game_create_animation',
   'export_project', 'game_serialize_state', 'game_physics_body', 'game_create_joint',
   'game_bone_pose', 'game_ui_theme', 'game_viewport', 'game_debug_draw',
+  // Batch 1: Networking + Input + System + Signals + Script
+  'game_http_request', 'game_websocket', 'game_multiplayer', 'game_rpc',
+  'game_touch', 'game_input_state', 'game_input_action', 'game_list_signals',
+  'game_await_signal', 'game_script', 'game_window', 'game_os_info',
+  'game_time_scale', 'game_process_mode', 'game_world_settings',
+  // Batch 2: 3D Rendering + Lighting + Sky + Physics
+  'game_csg', 'game_multimesh', 'game_procedural_mesh', 'game_light_3d',
+  'game_mesh_instance', 'game_gridmap', 'game_3d_effects', 'game_gi',
+  'game_path_3d', 'game_sky', 'game_camera_attributes', 'game_navigation_3d',
+  'game_physics_3d',
+  // Batch 3: 2D Systems + Animation Advanced + Audio Effects
+  'game_canvas', 'game_canvas_draw', 'game_light_2d', 'game_parallax',
+  'game_shape_2d', 'game_path_2d', 'game_physics_2d', 'game_animation_tree',
+  'game_animation_control', 'game_skeleton_ik', 'game_audio_effect',
+  'game_audio_bus_layout', 'game_audio_spatial',
+  // Batch 4: Editor/Headless + Localization + Resource
+  'rename_file', 'manage_resource', 'create_script', 'manage_scene_signals',
+  'manage_layers', 'manage_plugins', 'manage_shader', 'manage_theme_resource',
+  'set_main_scene', 'manage_scene_structure', 'manage_translations', 'game_locale',
+  // Batch 5: UI Controls + Rendering + Resource Runtime
+  'game_ui_control', 'game_ui_text', 'game_ui_popup', 'game_ui_tree',
+  'game_ui_item_list', 'game_ui_tabs', 'game_ui_menu', 'game_ui_range',
+  'game_render_settings', 'game_resource',
 ];
 
 let sourceCode: string;
@@ -46,8 +69,8 @@ beforeAll(() => {
 });
 
 describe('Tool definitions', () => {
-  it('defines exactly 86 tools', () => {
-    expect(ALL_TOOL_NAMES).toHaveLength(86);
+  it('defines exactly 149 tools', () => {
+    expect(ALL_TOOL_NAMES).toHaveLength(149);
   });
 
   it('all tool names are unique', () => {

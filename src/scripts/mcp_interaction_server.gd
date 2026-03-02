@@ -213,6 +213,115 @@ func _handle_command(json_str: String) -> void:
 			_cmd_viewport(params)
 		"debug_draw":
 			_cmd_debug_draw(params)
+		# Batch 1: Networking + Input + System + Signals + Script
+		"http_request":
+			await _cmd_http_request(params)
+		"websocket":
+			_cmd_websocket(params)
+		"multiplayer":
+			_cmd_multiplayer(params)
+		"rpc":
+			_cmd_rpc(params)
+		"touch":
+			await _cmd_touch(params)
+		"input_state":
+			_cmd_input_state(params)
+		"input_action":
+			_cmd_input_action(params)
+		"list_signals":
+			_cmd_list_signals(params)
+		"await_signal":
+			await _cmd_await_signal(params)
+		"script":
+			_cmd_script(params)
+		"window":
+			_cmd_window(params)
+		"os_info":
+			_cmd_os_info()
+		"time_scale":
+			_cmd_time_scale(params)
+		"process_mode":
+			_cmd_process_mode(params)
+		"world_settings":
+			_cmd_world_settings(params)
+		# Batch 2: 3D Rendering + Lighting + Sky + Physics
+		"csg":
+			_cmd_csg(params)
+		"multimesh":
+			_cmd_multimesh(params)
+		"procedural_mesh":
+			_cmd_procedural_mesh(params)
+		"light_3d":
+			_cmd_light_3d(params)
+		"mesh_instance":
+			_cmd_mesh_instance(params)
+		"gridmap":
+			_cmd_gridmap(params)
+		"3d_effects":
+			_cmd_3d_effects(params)
+		"gi":
+			_cmd_gi(params)
+		"path_3d":
+			_cmd_path_3d(params)
+		"sky":
+			_cmd_sky(params)
+		"camera_attributes":
+			_cmd_camera_attributes(params)
+		"navigation_3d":
+			await _cmd_navigation_3d(params)
+		"physics_3d":
+			await _cmd_physics_3d(params)
+		# Batch 3: 2D Systems + Animation + Audio
+		"canvas":
+			_cmd_canvas(params)
+		"canvas_draw":
+			_cmd_canvas_draw(params)
+		"light_2d":
+			_cmd_light_2d(params)
+		"parallax":
+			_cmd_parallax(params)
+		"shape_2d":
+			_cmd_shape_2d(params)
+		"path_2d":
+			_cmd_path_2d(params)
+		"physics_2d":
+			await _cmd_physics_2d(params)
+		"animation_tree":
+			_cmd_animation_tree(params)
+		"animation_control":
+			_cmd_animation_control(params)
+		"skeleton_ik":
+			_cmd_skeleton_ik(params)
+		"audio_effect":
+			_cmd_audio_effect(params)
+		"audio_bus_layout":
+			_cmd_audio_bus_layout(params)
+		"audio_spatial":
+			_cmd_audio_spatial(params)
+		# Batch 4: Locale (runtime)
+		"locale":
+			_cmd_locale(params)
+		# Batch 5: UI Controls + Rendering + Resource
+		"ui_control":
+			_cmd_ui_control(params)
+		"ui_text":
+			_cmd_ui_text(params)
+		"ui_popup":
+			_cmd_ui_popup(params)
+		"ui_tree":
+			_cmd_ui_tree(params)
+		"ui_item_list":
+			_cmd_ui_item_list(params)
+		"ui_tabs":
+			_cmd_ui_tabs(params)
+		"ui_menu":
+			_cmd_ui_menu(params)
+		"ui_range":
+			_cmd_ui_range(params)
+		"render_settings":
+			_cmd_render_settings(params)
+		"resource":
+			_cmd_resource(params)
 		_:
 			_send_response({"error": "Unknown command: %s" % command})
 
@@ -2588,8 +2697,1721 @@ func _clear_debug_draw() -> void:
 		_debug_draw_node = null
 
 
+# ==========================================================================
+# Batch 1: Networking + Input + System + Signals + Script
+# ==========================================================================
+
+func _cmd_http_request(params: Dictionary) -> void:
+	var url: String = params.get("url", "")
+	if url.is_empty():
+		_send_response({"error": "url is required"})
+		return
+	var method_str: String = params.get("method", "GET").to_upper()
+	var http: HTTPRequest = HTTPRequest.new()
+	http.timeout = float(params.get("timeout", 30))
+	add_child(http)
+	var headers: PackedStringArray = PackedStringArray()
+	if params.has("headers"):
+		var h: Dictionary = params["headers"]
+		for k in h:
+			headers.append("%s: %s" % [k, str(h[k])])
+	var method_enum: int = HTTPClient.METHOD_GET
+	match method_str:
+		"POST": method_enum = HTTPClient.METHOD_POST
+		"PUT": method_enum = HTTPClient.METHOD_PUT
+		"DELETE": method_enum = HTTPClient.METHOD_DELETE
+	var body: String = params.get("body", "")
+	var err: int = http.request(url, headers, method_enum, body)
+	if err != OK:
+		http.queue_free()
+		_send_response({"error": "HTTP request failed to start: %d" % err})
+		return
+	var result: Array = await http.request_completed
+	http.queue_free()
+	_send_response({"success": true, "status_code": result[1], "body": result[3].get_string_from_utf8()})
+
+
+var _websocket: WebSocketPeer = null
+
+func _cmd_websocket(params: Dictionary) -> void:
+	var action: String = params.get("action", "")
+	match action:
+		"connect":
+			var url: String = params.get("url", "")
+			if url.is_empty():
+				_send_response({"error": "url is required for connect"})
+				return
+			_websocket = WebSocketPeer.new()
+			var err: int = _websocket.connect_to_url(url)
+			if err != OK:
+				_send_response({"error": "WebSocket connect failed: %d" % err})
+				_websocket = null
+				return
+			_send_response({"success": true, "action": "connect", "url": url})
+		"disconnect":
+			if _websocket != null:
+				_websocket.close()
+				_websocket = null
+			_send_response({"success": true, "action": "disconnect"})
+		"send":
+			if _websocket == null:
+				_send_response({"error": "No WebSocket connection"})
+				return
+			_websocket.poll()
+			var msg: String = params.get("message", "")
+			_websocket.send_text(msg)
+			_send_response({"success": true, "action": "send"})
+		"status":
+			if _websocket == null:
+				_send_response({"success": true, "status": "disconnected"})
+				return
+			_websocket.poll()
+			_send_response({"success": true, "status": _websocket.get_ready_state()})
+		_:
+			_send_response({"error": "Unknown websocket action: %s" % action})
+
+
+func _cmd_multiplayer(params: Dictionary) -> void:
+	var action: String = params.get("action", "")
+	match action:
+		"create_server":
+			var peer: ENetMultiplayerPeer = ENetMultiplayerPeer.new()
+			var port: int = int(params.get("port", 7000))
+			var max_cl: int = int(params.get("max_clients", 32))
+			var err: int = peer.create_server(port, max_cl)
+			if err != OK:
+				_send_response({"error": "Failed to create server: %d" % err})
+				return
+			multiplayer.multiplayer_peer = peer
+			_send_response({"success": true, "action": "create_server", "port": port})
+		"create_client":
+			var peer: ENetMultiplayerPeer = ENetMultiplayerPeer.new()
+			var address: String = params.get("address", "127.0.0.1")
+			var port: int = int(params.get("port", 7000))
+			var err: int = peer.create_client(address, port)
+			if err != OK:
+				_send_response({"error": "Failed to create client: %d" % err})
+				return
+			multiplayer.multiplayer_peer = peer
+			_send_response({"success": true, "action": "create_client", "address": address, "port": port})
+		"disconnect":
+			multiplayer.multiplayer_peer = null
+			_send_response({"success": true, "action": "disconnect"})
+		"status":
+			var peer = multiplayer.multiplayer_peer
+			if peer == null:
+				_send_response({"success": true, "connected": false})
+				return
+			_send_response({"success": true, "connected": true, "unique_id": multiplayer.get_unique_id(), "is_server": multiplayer.is_server()})
+		_:
+			_send_response({"error": "Unknown multiplayer action: %s" % action})
+
+
+func _cmd_rpc(params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	var node: Node = get_tree().root.get_node_or_null(node_path)
+	if node == null:
+		_send_response({"error": "Node not found: %s" % node_path})
+		return
+	var action: String = params.get("action", "call")
+	var method: String = params.get("method", "")
+	if action == "call":
+		var args: Array = params.get("args", [])
+		node.rpc(method, args)
+		_send_response({"success": true, "action": "call", "method": method})
+	else:
+		_send_response({"success": true, "action": action, "method": method})
+
+
+func _cmd_touch(params: Dictionary) -> void:
+	var action: String = params.get("action", "press")
+	var x: float = float(params.get("x", 0))
+	var y: float = float(params.get("y", 0))
+	var idx: int = int(params.get("index", 0))
+	match action:
+		"press":
+			var ev: InputEventScreenTouch = InputEventScreenTouch.new()
+			ev.index = idx
+			ev.position = Vector2(x, y)
+			ev.pressed = true
+			Input.parse_input_event(ev)
+			await get_tree().process_frame
+			_send_response({"success": true, "action": "press", "x": x, "y": y})
+		"release":
+			var ev: InputEventScreenTouch = InputEventScreenTouch.new()
+			ev.index = idx
+			ev.position = Vector2(x, y)
+			ev.pressed = false
+			Input.parse_input_event(ev)
+			await get_tree().process_frame
+			_send_response({"success": true, "action": "release", "x": x, "y": y})
+		"drag":
+			var to_x: float = float(params.get("to_x", x))
+			var to_y: float = float(params.get("to_y", y))
+			var steps: int = int(params.get("steps", 10))
+			var press_ev: InputEventScreenTouch = InputEventScreenTouch.new()
+			press_ev.index = idx
+			press_ev.position = Vector2(x, y)
+			press_ev.pressed = true
+			Input.parse_input_event(press_ev)
+			for i in range(steps):
+				var t: float = float(i + 1) / float(steps)
+				var drag_ev: InputEventScreenDrag = InputEventScreenDrag.new()
+				drag_ev.index = idx
+				drag_ev.position = Vector2(lerp(x, to_x, t), lerp(y, to_y, t))
+				Input.parse_input_event(drag_ev)
+				await get_tree().process_frame
+			var rel_ev: InputEventScreenTouch = InputEventScreenTouch.new()
+			rel_ev.index = idx
+			rel_ev.position = Vector2(to_x, to_y)
+			rel_ev.pressed = false
+			Input.parse_input_event(rel_ev)
+			await get_tree().process_frame
+			_send_response({"success": true, "action": "drag", "from": {"x": x, "y": y}, "to": {"x": to_x, "y": to_y}})
+		_:
+			_send_response({"error": "Unknown touch action: %s" % action})
+
+
+func _cmd_input_state(params: Dictionary) -> void:
+	var action: String = params.get("action", "query")
+	match action:
+		"query":
+			var mouse_pos: Vector2 = get_viewport().get_mouse_position()
+			var joypads: Array = Input.get_connected_joypads()
+			_send_response({"success": true, "mouse_position": {"x": mouse_pos.x, "y": mouse_pos.y}, "connected_joypads": joypads.size()})
+		"warp_mouse":
+			var pos: Vector2 = Vector2(float(params.get("x", 0)), float(params.get("y", 0)))
+			Input.warp_mouse(pos)
+			_send_response({"success": true, "action": "warp_mouse", "position": {"x": pos.x, "y": pos.y}})
+		"set_mouse_mode":
+			var mode_str: String = params.get("mouse_mode", "visible")
+			var mode_val: int = Input.MOUSE_MODE_VISIBLE
+			match mode_str:
+				"hidden": mode_val = Input.MOUSE_MODE_HIDDEN
+				"captured": mode_val = Input.MOUSE_MODE_CAPTURED
+				"confined": mode_val = Input.MOUSE_MODE_CONFINED
+			Input.mouse_mode = mode_val
+			_send_response({"success": true, "action": "set_mouse_mode", "mode": mode_str})
+		_:
+			_send_response({"error": "Unknown input_state action: %s" % action})
+
+
+func _cmd_input_action(params: Dictionary) -> void:
+	var action: String = params.get("action", "")
+	match action:
+		"set_strength":
+			var action_name: String = params.get("action_name", "")
+			var strength: float = float(params.get("strength", 1.0))
+			Input.action_press(action_name, strength)
+			_send_response({"success": true, "action": "set_strength", "action_name": action_name, "strength": strength})
+		"add_action":
+			var action_name: String = params.get("action_name", "")
+			if not InputMap.has_action(action_name):
+				InputMap.add_action(action_name)
+			if params.has("key"):
+				var ev: InputEventKey = InputEventKey.new()
+				ev.keycode = OS.find_keycode_from_string(params["key"])
+				InputMap.action_add_event(action_name, ev)
+			_send_response({"success": true, "action": "add_action", "action_name": action_name})
+		"remove_action":
+			var action_name: String = params.get("action_name", "")
+			if InputMap.has_action(action_name):
+				InputMap.erase_action(action_name)
+			_send_response({"success": true, "action": "remove_action", "action_name": action_name})
+		"list":
+			var actions: Array = InputMap.get_actions()
+			_send_response({"success": true, "actions": actions})
+		_:
+			_send_response({"error": "Unknown input_action action: %s" % action})
+
+
+func _cmd_list_signals(params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	var node: Node = get_tree().root.get_node_or_null(node_path)
+	if node == null:
+		_send_response({"error": "Node not found: %s" % node_path})
+		return
+	var signals: Array = []
+	for sig in node.get_signal_list():
+		var connections: Array = []
+		for conn in node.get_signal_connection_list(sig["name"]):
+			connections.append({"callable": str(conn["callable"]), "flags": conn["flags"]})
+		signals.append({"name": sig["name"], "args": str(sig["args"]), "connections": connections})
+	_send_response({"success": true, "node_path": node_path, "signals": signals})
+
+
+func _cmd_await_signal(params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	var signal_name: String = params.get("signal_name", "")
+	var timeout: float = float(params.get("timeout", 10))
+	var node: Node = get_tree().root.get_node_or_null(node_path)
+	if node == null:
+		_send_response({"error": "Node not found: %s" % node_path})
+		return
+	if not node.has_signal(signal_name):
+		_send_response({"error": "Signal not found: %s on %s" % [signal_name, node_path]})
+		return
+	var timer: SceneTreeTimer = get_tree().create_timer(timeout)
+	var result: Array = [false, []]
+	var cb: Callable = func():
+		result[0] = true
+	node.connect(signal_name, cb, CONNECT_ONE_SHOT)
+	while not result[0] and timer.time_left > 0:
+		await get_tree().process_frame
+	if node.is_connected(signal_name, cb):
+		node.disconnect(signal_name, cb)
+	if result[0]:
+		_send_response({"success": true, "signal_name": signal_name, "received": true})
+	else:
+		_send_response({"success": true, "signal_name": signal_name, "received": false, "timeout": true})
+
+
+func _cmd_script(params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	var node: Node = get_tree().root.get_node_or_null(node_path)
+	if node == null:
+		_send_response({"error": "Node not found: %s" % node_path})
+		return
+	var action: String = params.get("action", "get_source")
+	match action:
+		"get_source":
+			var s = node.get_script()
+			if s == null:
+				_send_response({"success": true, "has_script": false})
+				return
+			_send_response({"success": true, "has_script": true, "source": s.source_code if s is GDScript else "", "path": s.resource_path})
+		"attach":
+			var source: String = params.get("source", "")
+			if source.is_empty():
+				_send_response({"error": "source is required for attach"})
+				return
+			var s: GDScript = GDScript.new()
+			s.source_code = source
+			var err: int = s.reload()
+			if err != OK:
+				_send_response({"error": "Script compile error: %d" % err})
+				return
+			node.set_script(s)
+			_send_response({"success": true, "action": "attach", "node_path": node_path})
+		"detach":
+			node.set_script(null)
+			_send_response({"success": true, "action": "detach", "node_path": node_path})
+		_:
+			_send_response({"error": "Unknown script action: %s" % action})
+
+
+func _cmd_window(params: Dictionary) -> void:
+	var action: String = params.get("action", "get")
+	var win: Window = get_tree().root
+	if action == "get":
+		_send_response({"success": true, "size": {"x": win.size.x, "y": win.size.y}, "position": {"x": win.position.x, "y": win.position.y}, "fullscreen": win.mode == Window.MODE_FULLSCREEN, "borderless": win.borderless, "title": win.title})
+		return
+	if params.has("width") and params.has("height"):
+		win.size = Vector2i(int(params["width"]), int(params["height"]))
+	if params.has("fullscreen"):
+		win.mode = Window.MODE_FULLSCREEN if bool(params["fullscreen"]) else Window.MODE_WINDOWED
+	if params.has("borderless"):
+		win.borderless = bool(params["borderless"])
+	if params.has("title"):
+		win.title = str(params["title"])
+	if params.has("position"):
+		var p: Dictionary = params["position"]
+		win.position = Vector2i(int(p.get("x", 0)), int(p.get("y", 0)))
+	if params.has("vsync"):
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if bool(params["vsync"]) else DisplayServer.VSYNC_DISABLED)
+	_send_response({"success": true, "action": "set", "size": {"x": win.size.x, "y": win.size.y}})
+
+
+func _cmd_os_info() -> void:
+	var screen_size: Vector2i = DisplayServer.screen_get_size()
+	_send_response({"success": true, "os_name": OS.get_name(), "locale": OS.get_locale(), "screen_size": {"x": screen_size.x, "y": screen_size.y}, "video_adapter": RenderingServer.get_video_adapter_name(), "processor_count": OS.get_processor_count()})
+
+
+func _cmd_time_scale(params: Dictionary) -> void:
+	var action: String = params.get("action", "get")
+	if action == "set":
+		Engine.time_scale = float(params.get("time_scale", 1.0))
+	_send_response({"success": true, "time_scale": Engine.time_scale, "ticks_msec": Time.get_ticks_msec(), "fps": Engine.get_frames_per_second()})
+
+
+func _cmd_process_mode(params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	var node: Node = get_tree().root.get_node_or_null(node_path)
+	if node == null:
+		_send_response({"error": "Node not found: %s" % node_path})
+		return
+	var mode_str: String = params.get("mode", "inherit")
+	var mode_val: int = Node.PROCESS_MODE_INHERIT
+	match mode_str:
+		"pausable": mode_val = Node.PROCESS_MODE_PAUSABLE
+		"when_paused": mode_val = Node.PROCESS_MODE_WHEN_PAUSED
+		"always": mode_val = Node.PROCESS_MODE_ALWAYS
+		"disabled": mode_val = Node.PROCESS_MODE_DISABLED
+	node.process_mode = mode_val
+	_send_response({"success": true, "node_path": node_path, "mode": mode_str})
+
+
+func _cmd_world_settings(params: Dictionary) -> void:
+	var action: String = params.get("action", "get")
+	if action == "set":
+		if params.has("gravity"):
+			ProjectSettings.set_setting("physics/3d/default_gravity", float(params["gravity"]))
+		if params.has("physics_fps"):
+			Engine.physics_ticks_per_second = int(params["physics_fps"])
+	_send_response({"success": true, "gravity": ProjectSettings.get_setting("physics/3d/default_gravity"), "physics_fps": Engine.physics_ticks_per_second})
+
+
+# ==========================================================================
+# Batch 2: 3D Rendering + Lighting + Sky + Physics
+# ==========================================================================
+
+func _cmd_csg(params: Dictionary) -> void:
+	var action: String = params.get("action", "create")
+	if action == "create":
+		var parent_path: String = params.get("parent_path", "/root")
+		var parent: Node = get_tree().root.get_node_or_null(parent_path)
+		if parent == null:
+			_send_response({"error": "Parent not found: %s" % parent_path})
+			return
+		var csg_type: String = params.get("csg_type", "box")
+		var node: CSGShape3D
+		match csg_type:
+			"box": node = CSGBox3D.new()
+			"sphere": node = CSGSphere3D.new()
+			"cylinder": node = CSGCylinder3D.new()
+			"mesh": node = CSGMesh3D.new()
+			"combiner": node = CSGCombiner3D.new()
+			_:
+				_send_response({"error": "Unknown CSG type: %s" % csg_type})
+				return
+		if params.has("operation"):
+			match params["operation"]:
+				"union": node.operation = CSGShape3D.OPERATION_UNION
+				"intersection": node.operation = CSGShape3D.OPERATION_INTERSECTION
+				"subtraction": node.operation = CSGShape3D.OPERATION_SUBTRACTION
+		if params.has("name") and not (params["name"] as String).is_empty():
+			node.name = params["name"]
+		parent.add_child(node)
+		node.owner = get_tree().edited_scene_root if get_tree().edited_scene_root else get_tree().root
+		_send_response({"success": true, "action": "create", "path": str(node.get_path()), "type": csg_type})
+	elif action == "configure":
+		var node_path: String = params.get("node_path", "")
+		var node: Node = get_tree().root.get_node_or_null(node_path)
+		if node == null or not node is CSGShape3D:
+			_send_response({"error": "CSGShape3D not found: %s" % node_path})
+			return
+		if params.has("operation"):
+			match params["operation"]:
+				"union": (node as CSGShape3D).operation = CSGShape3D.OPERATION_UNION
+				"intersection": (node as CSGShape3D).operation = CSGShape3D.OPERATION_INTERSECTION
+				"subtraction": (node as CSGShape3D).operation = CSGShape3D.OPERATION_SUBTRACTION
+		_send_response({"success": true, "action": "configure", "path": str(node.get_path())})
+	else:
+		_send_response({"error": "Unknown csg action: %s" % action})
+
+
+func _cmd_multimesh(params: Dictionary) -> void:
+	var action: String = params.get("action", "create")
+	match action:
+		"create":
+			var parent_path: String = params.get("parent_path", "/root")
+			var parent: Node = get_tree().root.get_node_or_null(parent_path)
+			if parent == null:
+				_send_response({"error": "Parent not found: %s" % parent_path})
+				return
+			var mmi: MultiMeshInstance3D = MultiMeshInstance3D.new()
+			var mm: MultiMesh = MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.instance_count = int(params.get("count", 1))
+			var mesh_type: String = params.get("mesh_type", "box")
+			match mesh_type:
+				"box": mm.mesh = BoxMesh.new()
+				"sphere": mm.mesh = SphereMesh.new()
+				"cylinder": mm.mesh = CylinderMesh.new()
+				_: mm.mesh = BoxMesh.new()
+			mmi.multimesh = mm
+			if params.has("name") and not (params["name"] as String).is_empty():
+				mmi.name = params["name"]
+			parent.add_child(mmi)
+			_send_response({"success": true, "action": "create", "path": str(mmi.get_path()), "count": mm.instance_count})
+		"set_instance":
+			var node_path: String = params.get("node_path", "")
+			var node: Node = get_tree().root.get_node_or_null(node_path)
+			if node == null or not node is MultiMeshInstance3D:
+				_send_response({"error": "MultiMeshInstance3D not found: %s" % node_path})
+				return
+			var idx: int = int(params.get("index", 0))
+			var tf: Dictionary = params.get("transform", {})
+			var origin: Dictionary = tf.get("origin", {})
+			var xform: Transform3D = Transform3D.IDENTITY
+			xform.origin = Vector3(float(origin.get("x", 0)), float(origin.get("y", 0)), float(origin.get("z", 0)))
+			(node as MultiMeshInstance3D).multimesh.set_instance_transform(idx, xform)
+			_send_response({"success": true, "action": "set_instance", "index": idx})
+		"get_info":
+			var node_path: String = params.get("node_path", "")
+			var node: Node = get_tree().root.get_node_or_null(node_path)
+			if node == null or not node is MultiMeshInstance3D:
+				_send_response({"error": "MultiMeshInstance3D not found: %s" % node_path})
+				return
+			var mm = (node as MultiMeshInstance3D).multimesh
+			_send_response({"success": true, "count": mm.instance_count if mm else 0, "visible_count": mm.visible_instance_count if mm else 0})
+		_:
+			_send_response({"error": "Unknown multimesh action: %s" % action})
+
+
+func _cmd_procedural_mesh(params: Dictionary) -> void:
+	var parent_path: String = params.get("parent_path", "/root")
+	var parent: Node = get_tree().root.get_node_or_null(parent_path)
+	if parent == null:
+		_send_response({"error": "Parent not found: %s" % parent_path})
+		return
+	var verts_arr: Array = params.get("vertices", [])
+	var verts: PackedVector3Array = PackedVector3Array()
+	for v in verts_arr:
+		verts.append(Vector3(float(v[0]), float(v[1]), float(v[2])))
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	if params.has("normals"):
+		var norms: PackedVector3Array = PackedVector3Array()
+		for n in params["normals"]:
+			norms.append(Vector3(float(n[0]), float(n[1]), float(n[2])))
+		arrays[Mesh.ARRAY_NORMAL] = norms
+	if params.has("uvs"):
+		var uvs: PackedVector2Array = PackedVector2Array()
+		for uv in params["uvs"]:
+			uvs.append(Vector2(float(uv[0]), float(uv[1])))
+		arrays[Mesh.ARRAY_TEX_UV] = uvs
+	if params.has("indices"):
+		var indices: PackedInt32Array = PackedInt32Array()
+		for idx in params["indices"]:
+			indices.append(int(idx))
+		arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh: ArrayMesh = ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var mi: MeshInstance3D = MeshInstance3D.new()
+	mi.mesh = mesh
+	if params.has("name") and not (params["name"] as String).is_empty():
+		mi.name = params["name"]
+	parent.add_child(mi)
+	_send_response({"success": true, "path": str(mi.get_path()), "vertex_count": verts.size()})
+
+
+func _cmd_light_3d(params: Dictionary) -> void:
+	var action: String = params.get("action", "create")
+	if action == "create":
+		var parent_path: String = params.get("parent_path", "/root")
+		var parent: Node = get_tree().root.get_node_or_null(parent_path)
+		if parent == null:
+			_send_response({"error": "Parent not found: %s" % parent_path})
+			return
+		var light_type: String = params.get("light_type", "omni")
+		var light: Light3D
+		match light_type:
+			"directional": light = DirectionalLight3D.new()
+			"omni": light = OmniLight3D.new()
+			"spot": light = SpotLight3D.new()
+			_:
+				_send_response({"error": "Unknown light type: %s" % light_type})
+				return
+		if params.has("color"):
+			var c: Dictionary = params["color"]
+			light.light_color = Color(float(c.get("r", 1)), float(c.get("g", 1)), float(c.get("b", 1)))
+		if params.has("energy"):
+			light.light_energy = float(params["energy"])
+		if params.has("shadows"):
+			light.shadow_enabled = bool(params["shadows"])
+		if light is OmniLight3D and params.has("range"):
+			(light as OmniLight3D).omni_range = float(params["range"])
+		if light is SpotLight3D:
+			if params.has("range"):
+				(light as SpotLight3D).spot_range = float(params["range"])
+			if params.has("spot_angle"):
+				(light as SpotLight3D).spot_angle = float(params["spot_angle"])
+		if params.has("name") and not (params["name"] as String).is_empty():
+			light.name = params["name"]
+		parent.add_child(light)
+		_send_response({"success": true, "action": "create", "path": str(light.get_path()), "type": light_type})
+	elif action == "configure":
+		var node_path: String = params.get("node_path", "")
+		var node: Node = get_tree().root.get_node_or_null(node_path)
+		if node == null or not node is Light3D:
+			_send_response({"error": "Light3D not found: %s" % node_path})
+			return
+		var light: Light3D = node as Light3D
+		if params.has("color"):
+			var c: Dictionary = params["color"]
+			light.light_color = Color(float(c.get("r", 1)), float(c.get("g", 1)), float(c.get("b", 1)))
+		if params.has("energy"):
+			light.light_energy = float(params["energy"])
+		if params.has("shadows"):
+			light.shadow_enabled = bool(params["shadows"])
+		_send_response({"success": true, "action": "configure", "path": str(node.get_path())})
+	else:
+		_send_response({"error": "Unknown light_3d action: %s" % action})
+
+
+func _cmd_mesh_instance(params: Dictionary) -> void:
+	var parent_path: String = params.get("parent_path", "/root")
+	var parent: Node = get_tree().root.get_node_or_null(parent_path)
+	if parent == null:
+		_send_response({"error": "Parent not found: %s" % parent_path})
+		return
+	var mesh_type: String = params.get("mesh_type", "box")
+	var mesh: Mesh
+	match mesh_type:
+		"box": mesh = BoxMesh.new()
+		"sphere": mesh = SphereMesh.new()
+		"cylinder": mesh = CylinderMesh.new()
+		"capsule": mesh = CapsuleMesh.new()
+		"plane": mesh = PlaneMesh.new()
+		"quad": mesh = QuadMesh.new()
+		_:
+			_send_response({"error": "Unknown mesh type: %s" % mesh_type})
+			return
+	if params.has("size") and mesh is BoxMesh:
+		var s: Dictionary = params["size"]
+		(mesh as BoxMesh).size = Vector3(float(s.get("x", 1)), float(s.get("y", 1)), float(s.get("z", 1)))
+	if params.has("radius"):
+		if mesh is SphereMesh: (mesh as SphereMesh).radius = float(params["radius"])
+		elif mesh is CylinderMesh: (mesh as CylinderMesh).top_radius = float(params["radius"])
+		elif mesh is CapsuleMesh: (mesh as CapsuleMesh).radius = float(params["radius"])
+	if params.has("height"):
+		if mesh is CylinderMesh: (mesh as CylinderMesh).height = float(params["height"])
+		elif mesh is CapsuleMesh: (mesh as CapsuleMesh).height = float(params["height"])
+		elif mesh is SphereMesh: (mesh as SphereMesh).height = float(params["height"])
+	var mi: MeshInstance3D = MeshInstance3D.new()
+	mi.mesh = mesh
+	if params.has("material") and params["material"] is String:
+		var mat: StandardMaterial3D = StandardMaterial3D.new()
+		var hex: String = params["material"]
+		if hex.begins_with("#") or hex.length() == 6 or hex.length() == 8:
+			mat.albedo_color = Color.from_string(hex, Color.WHITE)
+		mi.material_override = mat
+	if params.has("name") and not (params["name"] as String).is_empty():
+		mi.name = params["name"]
+	parent.add_child(mi)
+	_send_response({"success": true, "path": str(mi.get_path()), "mesh_type": mesh_type})
+
+
+func _cmd_gridmap(params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	var node: Node = get_tree().root.get_node_or_null(node_path)
+	if node == null or not node is GridMap:
+		_send_response({"error": "GridMap not found: %s" % node_path})
+		return
+	var gm: GridMap = node as GridMap
+	var action: String = params.get("action", "get_used")
+	match action:
+		"set_cell":
+			gm.set_cell_item(Vector3i(int(params.get("x", 0)), int(params.get("y", 0)), int(params.get("z", 0))), int(params.get("item", 0)), int(params.get("orientation", 0)))
+			_send_response({"success": true, "action": "set_cell"})
+		"get_cell":
+			var item: int = gm.get_cell_item(Vector3i(int(params.get("x", 0)), int(params.get("y", 0)), int(params.get("z", 0))))
+			_send_response({"success": true, "action": "get_cell", "item": item})
+		"clear":
+			gm.clear()
+			_send_response({"success": true, "action": "clear"})
+		"get_used":
+			var cells: Array = gm.get_used_cells()
+			var result: Array = []
+			for c in cells.slice(0, 100):
+				result.append({"x": c.x, "y": c.y, "z": c.z})
+			_send_response({"success": true, "action": "get_used", "cells": result, "total": cells.size()})
+		_:
+			_send_response({"error": "Unknown gridmap action: %s" % action})
+
+
+func _cmd_3d_effects(params: Dictionary) -> void:
+	var parent_path: String = params.get("parent_path", "/root")
+	var parent: Node = get_tree().root.get_node_or_null(parent_path)
+	if parent == null:
+		_send_response({"error": "Parent not found: %s" % parent_path})
+		return
+	var effect_type: String = params.get("effect_type", "")
+	var node: Node3D
+	match effect_type:
+		"reflection_probe": node = ReflectionProbe.new()
+		"decal": node = Decal.new()
+		"fog_volume": node = FogVolume.new()
+		_:
+			_send_response({"error": "Unknown effect type: %s" % effect_type})
+			return
+	if params.has("size"):
+		var s: Dictionary = params["size"]
+		var size_v: Vector3 = Vector3(float(s.get("x", 1)), float(s.get("y", 1)), float(s.get("z", 1)))
+		if node is ReflectionProbe: (node as ReflectionProbe).size = size_v
+		elif node is Decal: (node as Decal).size = size_v
+		elif node is FogVolume: (node as FogVolume).size = size_v
+	if params.has("name") and not (params["name"] as String).is_empty():
+		node.name = params["name"]
+	parent.add_child(node)
+	_send_response({"success": true, "path": str(node.get_path()), "effect_type": effect_type})
+
+
+func _cmd_gi(params: Dictionary) -> void:
+	var parent_path: String = params.get("parent_path", "/root")
+	var parent: Node = get_tree().root.get_node_or_null(parent_path)
+	if parent == null:
+		_send_response({"error": "Parent not found: %s" % parent_path})
+		return
+	var gi_type: String = params.get("gi_type", "voxel_gi")
+	var node: VisualInstance3D
+	match gi_type:
+		"voxel_gi": node = VoxelGI.new()
+		"lightmap_gi": node = LightmapGI.new()
+		_:
+			_send_response({"error": "Unknown GI type: %s" % gi_type})
+			return
+	if params.has("size") and node is VoxelGI:
+		var s: Dictionary = params["size"]
+		(node as VoxelGI).size = Vector3(float(s.get("x", 10)), float(s.get("y", 10)), float(s.get("z", 10)))
+	if params.has("name") and not (params["name"] as String).is_empty():
+		node.name = params["name"]
+	parent.add_child(node)
+	_send_response({"success": true, "path": str(node.get_path()), "gi_type": gi_type})
+
+
+func _cmd_path_3d(params: Dictionary) -> void:
+	var action: String = params.get("action", "create")
+	match action:
+		"create":
+			var parent_path: String = params.get("parent_path", "/root")
+			var parent: Node = get_tree().root.get_node_or_null(parent_path)
+			if parent == null:
+				_send_response({"error": "Parent not found: %s" % parent_path})
+				return
+			var path_node: Path3D = Path3D.new()
+			path_node.curve = Curve3D.new()
+			if params.has("name") and not (params["name"] as String).is_empty():
+				path_node.name = params["name"]
+			if params.has("points"):
+				for p in params["points"]:
+					path_node.curve.add_point(Vector3(float(p.get("x", 0)), float(p.get("y", 0)), float(p.get("z", 0))))
+			parent.add_child(path_node)
+			_send_response({"success": true, "action": "create", "path": str(path_node.get_path()), "point_count": path_node.curve.point_count})
+		"add_point":
+			var node_path: String = params.get("node_path", "")
+			var node: Node = get_tree().root.get_node_or_null(node_path)
+			if node == null or not node is Path3D:
+				_send_response({"error": "Path3D not found: %s" % node_path})
+				return
+			var p: Dictionary = params.get("point", {})
+			(node as Path3D).curve.add_point(Vector3(float(p.get("x", 0)), float(p.get("y", 0)), float(p.get("z", 0))))
+			_send_response({"success": true, "action": "add_point", "point_count": (node as Path3D).curve.point_count})
+		"get_points":
+			var node_path: String = params.get("node_path", "")
+			var node: Node = get_tree().root.get_node_or_null(node_path)
+			if node == null or not node is Path3D:
+				_send_response({"error": "Path3D not found: %s" % node_path})
+				return
+			var pts: Array = []
+			for i in (node as Path3D).curve.point_count:
+				var pt: Vector3 = (node as Path3D).curve.get_point_position(i)
+				pts.append({"x": pt.x, "y": pt.y, "z": pt.z})
+			_send_response({"success": true, "action": "get_points", "points": pts})
+		_:
+			_send_response({"error": "Unknown path_3d action: %s" % action})
+
+
+func _cmd_sky(params: Dictionary) -> void:
+	var action: String = params.get("action", "create")
+	var env: Environment = _get_or_create_environment()
+	if env == null:
+		_send_response({"error": "Could not get or create environment"})
+		return
+	var sky_type: String = params.get("sky_type", "procedural")
+	if action == "create" or env.sky == null:
+		env.sky = Sky.new()
+		env.background_mode = Environment.BG_SKY
+		var sky_mat: ProceduralSkyMaterial = ProceduralSkyMaterial.new()
+		if params.has("top_color"):
+			var c: Dictionary = params["top_color"]
+			sky_mat.sky_top_color = Color(float(c.get("r", 0.4)), float(c.get("g", 0.6)), float(c.get("b", 1.0)))
+		if params.has("bottom_color"):
+			var c: Dictionary = params["bottom_color"]
+			sky_mat.sky_horizon_color = Color(float(c.get("r", 0.7)), float(c.get("g", 0.8)), float(c.get("b", 0.9)))
+		if params.has("ground_color"):
+			var c: Dictionary = params["ground_color"]
+			sky_mat.ground_bottom_color = Color(float(c.get("r", 0.1)), float(c.get("g", 0.1)), float(c.get("b", 0.1)))
+		if params.has("sun_energy"):
+			sky_mat.sun_curve = float(params["sun_energy"])
+		env.sky.sky_material = sky_mat
+	_send_response({"success": true, "action": action, "sky_type": sky_type})
+
+
+func _get_or_create_environment() -> Environment:
+	var cam: Camera3D = get_viewport().get_camera_3d()
+	if cam != null and cam.get_environment() != null:
+		return cam.get_environment()
+	var we: WorldEnvironment = null
+	for child in get_tree().root.get_children():
+		if child is WorldEnvironment:
+			we = child as WorldEnvironment
+			break
+	if we != null and we.environment != null:
+		return we.environment
+	# Create one
+	we = WorldEnvironment.new()
+	we.environment = Environment.new()
+	get_tree().root.add_child(we)
+	return we.environment
+
+
+func _cmd_camera_attributes(params: Dictionary) -> void:
+	var action: String = params.get("action", "get")
+	var cam: Camera3D = get_viewport().get_camera_3d()
+	if cam == null:
+		_send_response({"error": "No Camera3D found in viewport"})
+		return
+	if action == "get":
+		var info: Dictionary = {"success": true, "action": "get"}
+		if cam.attributes != null:
+			info["has_attributes"] = true
+		else:
+			info["has_attributes"] = false
+		_send_response(info)
+		return
+	# set
+	if cam.attributes == null:
+		cam.attributes = CameraAttributesPractical.new()
+	var attr: CameraAttributesPractical = cam.attributes as CameraAttributesPractical
+	if attr == null:
+		_send_response({"error": "Camera attributes is not CameraAttributesPractical"})
+		return
+	if params.has("dof_blur_far"):
+		attr.dof_blur_far_enabled = true
+		attr.dof_blur_far_distance = float(params["dof_blur_far"])
+	if params.has("dof_blur_near"):
+		attr.dof_blur_near_enabled = true
+		attr.dof_blur_near_distance = float(params["dof_blur_near"])
+	if params.has("dof_blur_amount"):
+		attr.dof_blur_amount = float(params["dof_blur_amount"])
+	if params.has("auto_exposure"):
+		attr.auto_exposure_enabled = bool(params["auto_exposure"])
+	_send_response({"success": true, "action": "set"})
+
+
+func _cmd_navigation_3d(params: Dictionary) -> void:
+	var action: String = params.get("action", "create")
+	match action:
+		"create":
+			var parent_path: String = params.get("parent_path", "/root")
+			var parent: Node = get_tree().root.get_node_or_null(parent_path)
+			if parent == null:
+				_send_response({"error": "Parent not found: %s" % parent_path})
+				return
+			var region: NavigationRegion3D = NavigationRegion3D.new()
+			region.navigation_mesh = NavigationMesh.new()
+			if params.has("cell_size"):
+				region.navigation_mesh.cell_size = float(params["cell_size"])
+			if params.has("agent_radius"):
+				region.navigation_mesh.agent_radius = float(params["agent_radius"])
+			if params.has("agent_height"):
+				region.navigation_mesh.agent_height = float(params["agent_height"])
+			if params.has("name") and not (params["name"] as String).is_empty():
+				region.name = params["name"]
+			parent.add_child(region)
+			_send_response({"success": true, "action": "create", "path": str(region.get_path())})
+		"bake":
+			var node_path: String = params.get("node_path", "")
+			var node: Node = get_tree().root.get_node_or_null(node_path)
+			if node == null or not node is NavigationRegion3D:
+				_send_response({"error": "NavigationRegion3D not found: %s" % node_path})
+				return
+			(node as NavigationRegion3D).bake_navigation_mesh()
+			await get_tree().process_frame
+			await get_tree().process_frame
+			_send_response({"success": true, "action": "bake"})
+		_:
+			_send_response({"error": "Unknown navigation_3d action: %s" % action})
+
+
+func _cmd_physics_3d(params: Dictionary) -> void:
+	var action: String = params.get("action", "ray")
+	await get_tree().physics_frame
+	var space: PhysicsDirectSpaceState3D = get_viewport().world_3d.direct_space_state
+	match action:
+		"ray":
+			var from_d: Dictionary = params.get("from", {})
+			var to_d: Dictionary = params.get("to", {})
+			var from: Vector3 = Vector3(float(from_d.get("x", 0)), float(from_d.get("y", 0)), float(from_d.get("z", 0)))
+			var to: Vector3 = Vector3(float(to_d.get("x", 0)), float(to_d.get("y", 0)), float(to_d.get("z", 0)))
+			var query: PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.create(from, to)
+			if params.has("collision_mask"):
+				query.collision_mask = int(params["collision_mask"])
+			var result: Dictionary = space.intersect_ray(query)
+			if result.is_empty():
+				_send_response({"success": true, "action": "ray", "hit": false})
+			else:
+				_send_response({"success": true, "action": "ray", "hit": true, "position": _variant_to_json(result["position"]), "normal": _variant_to_json(result["normal"]), "collider": str(result.get("collider", ""))})
+		"overlap":
+			var node_path: String = params.get("node_path", "")
+			var node: Node = get_tree().root.get_node_or_null(node_path)
+			if node == null or not node is Area3D:
+				_send_response({"error": "Area3D not found: %s" % node_path})
+				return
+			var bodies: Array = (node as Area3D).get_overlapping_bodies()
+			var result: Array = []
+			for b in bodies:
+				result.append({"name": b.name, "path": str(b.get_path())})
+			_send_response({"success": true, "action": "overlap", "bodies": result})
+		_:
+			_send_response({"error": "Unknown physics_3d action: %s" % action})
+
+
+# ==========================================================================
+# Batch 3: 2D Systems + Animation Advanced + Audio Effects
+# ==========================================================================
+
+func _cmd_canvas(params: Dictionary) -> void:
+	var action: String = params.get("action", "create_layer")
+	match action:
+		"create_layer":
+			var parent_path: String = params.get("parent_path", "/root")
+			var parent: Node = get_tree().root.get_node_or_null(parent_path)
+			if parent == null:
+				_send_response({"error": "Parent not found: %s" % parent_path})
+				return
+			var cl: CanvasLayer = CanvasLayer.new()
+			if params.has("layer"):
+				cl.layer = int(params["layer"])
+			if params.has("name") and not (params["name"] as String).is_empty():
+				cl.name = params["name"]
+			parent.add_child(cl)
+			_send_response({"success": true, "action": "create_layer", "path": str(cl.get_path())})
+		"create_modulate":
+			var parent_path: String = params.get("parent_path", "/root")
+			var parent: Node = get_tree().root.get_node_or_null(parent_path)
+			if parent == null:
+				_send_response({"error": "Parent not found: %s" % parent_path})
+				return
+			var cm: CanvasModulate = CanvasModulate.new()
+			if params.has("color"):
+				var c: Dictionary = params["color"]
+				cm.color = Color(float(c.get("r", 1)), float(c.get("g", 1)), float(c.get("b", 1)), float(c.get("a", 1)))
+			if params.has("name") and not (params["name"] as String).is_empty():
+				cm.name = params["name"]
+			parent.add_child(cm)
+			_send_response({"success": true, "action": "create_modulate", "path": str(cm.get_path())})
+		_:
+			_send_response({"error": "Unknown canvas action: %s" % action})
+
+
+var _canvas_draw_node: Node2D = null
+var _draw_commands: Array = []
+
+func _cmd_canvas_draw(params: Dictionary) -> void:
+	var action: String = params.get("action", "line")
+	if action == "clear":
+		_draw_commands.clear()
+		if _canvas_draw_node != null and is_instance_valid(_canvas_draw_node):
+			_canvas_draw_node.queue_redraw()
+		_send_response({"success": true, "action": "clear"})
+		return
+	# Ensure draw node
+	if _canvas_draw_node == null or not is_instance_valid(_canvas_draw_node):
+		var parent_path: String = params.get("parent_path", "/root")
+		var parent: Node = get_tree().root.get_node_or_null(parent_path)
+		if parent == null:
+			_send_response({"error": "Parent not found: %s" % parent_path})
+			return
+		_canvas_draw_node = Node2D.new()
+		_canvas_draw_node.name = "_McpCanvasDraw"
+		_canvas_draw_node.set_script(_create_draw_script())
+		parent.add_child(_canvas_draw_node)
+		_canvas_draw_node.set("draw_commands", _draw_commands)
+	var color_d: Dictionary = params.get("color", {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0})
+	var color: Color = Color(float(color_d.get("r", 1)), float(color_d.get("g", 1)), float(color_d.get("b", 1)), float(color_d.get("a", 1)))
+	_draw_commands.append({"action": action, "params": params, "color": color})
+	_canvas_draw_node.set("draw_commands", _draw_commands)
+	_canvas_draw_node.queue_redraw()
+	_send_response({"success": true, "action": action})
+
+func _create_draw_script() -> GDScript:
+	var s: GDScript = GDScript.new()
+	s.source_code = """extends Node2D
+var draw_commands: Array = []
+func _draw():
+	for cmd in draw_commands:
+		var p = cmd.params
+		var c = cmd.color
+		match cmd.action:
+			"line":
+				var f = p.get("from", {})
+				var t = p.get("to", {})
+				draw_line(Vector2(float(f.get("x",0)),float(f.get("y",0))),Vector2(float(t.get("x",0)),float(t.get("y",0))),c,float(p.get("width",2)))
+			"rect":
+				var r = p.get("rect", {})
+				draw_rect(Rect2(float(r.get("x",0)),float(r.get("y",0)),float(r.get("w",10)),float(r.get("h",10))),c,bool(p.get("filled",true)))
+			"circle":
+				var ct = p.get("center", {})
+				draw_circle(Vector2(float(ct.get("x",0)),float(ct.get("y",0))),float(p.get("radius",10)),c)
+"""
+	s.reload()
+	return s
+
+
+func _cmd_light_2d(params: Dictionary) -> void:
+	var action: String = params.get("action", "create_point")
+	var parent_path: String = params.get("parent_path", "/root")
+	var parent: Node = get_tree().root.get_node_or_null(parent_path)
+	if parent == null:
+		_send_response({"error": "Parent not found: %s" % parent_path})
+		return
+	match action:
+		"create_point":
+			var light: PointLight2D = PointLight2D.new()
+			if params.has("color"):
+				var c: Dictionary = params["color"]
+				light.color = Color(float(c.get("r", 1)), float(c.get("g", 1)), float(c.get("b", 1)), float(c.get("a", 1)))
+			if params.has("energy"):
+				light.energy = float(params["energy"])
+			# Create a simple gradient texture for the light
+			var tex: GradientTexture2D = GradientTexture2D.new()
+			tex.width = 128
+			tex.height = 128
+			tex.fill = GradientTexture2D.FILL_RADIAL
+			tex.gradient = Gradient.new()
+			light.texture = tex
+			if params.has("range"):
+				light.texture_scale = float(params["range"])
+			if params.has("name") and not (params["name"] as String).is_empty():
+				light.name = params["name"]
+			parent.add_child(light)
+			_send_response({"success": true, "action": "create_point", "path": str(light.get_path())})
+		"create_directional":
+			var light: DirectionalLight2D = DirectionalLight2D.new()
+			if params.has("color"):
+				var c: Dictionary = params["color"]
+				light.color = Color(float(c.get("r", 1)), float(c.get("g", 1)), float(c.get("b", 1)), float(c.get("a", 1)))
+			if params.has("energy"):
+				light.energy = float(params["energy"])
+			if params.has("name") and not (params["name"] as String).is_empty():
+				light.name = params["name"]
+			parent.add_child(light)
+			_send_response({"success": true, "action": "create_directional", "path": str(light.get_path())})
+		_:
+			_send_response({"error": "Unknown light_2d action: %s" % action})
+
+
+func _cmd_parallax(params: Dictionary) -> void:
+	var action: String = params.get("action", "create_background")
+	match action:
+		"create_background":
+			var parent_path: String = params.get("parent_path", "/root")
+			var parent: Node = get_tree().root.get_node_or_null(parent_path)
+			if parent == null:
+				_send_response({"error": "Parent not found: %s" % parent_path})
+				return
+			var bg: ParallaxBackground = ParallaxBackground.new()
+			if params.has("name") and not (params["name"] as String).is_empty():
+				bg.name = params["name"]
+			parent.add_child(bg)
+			_send_response({"success": true, "action": "create_background", "path": str(bg.get_path())})
+		"add_layer":
+			var parent_path: String = params.get("parent_path", "")
+			var parent: Node = get_tree().root.get_node_or_null(parent_path)
+			if parent == null or not parent is ParallaxBackground:
+				_send_response({"error": "ParallaxBackground not found: %s" % parent_path})
+				return
+			var layer: ParallaxLayer = ParallaxLayer.new()
+			if params.has("motion_scale"):
+				var ms: Dictionary = params["motion_scale"]
+				layer.motion_scale = Vector2(float(ms.get("x", 1)), float(ms.get("y", 1)))
+			if params.has("motion_offset"):
+				var mo: Dictionary = params["motion_offset"]
+				layer.motion_offset = Vector2(float(mo.get("x", 0)), float(mo.get("y", 0)))
+			if params.has("mirroring"):
+				var mi: Dictionary = params["mirroring"]
+				layer.motion_mirroring = Vector2(float(mi.get("x", 0)), float(mi.get("y", 0)))
+			if params.has("name") and not (params["name"] as String).is_empty():
+				layer.name = params["name"]
+			parent.add_child(layer)
+			_send_response({"success": true, "action": "add_layer", "path": str(layer.get_path())})
+		_:
+			_send_response({"error": "Unknown parallax action: %s" % action})
+
+
+func _cmd_shape_2d(params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	var node: Node = get_tree().root.get_node_or_null(node_path)
+	if node == null:
+		_send_response({"error": "Node not found: %s" % node_path})
+		return
+	var action: String = params.get("action", "get_points")
+	match action:
+		"add_point":
+			var p: Dictionary = params.get("point", {})
+			var pt: Vector2 = Vector2(float(p.get("x", 0)), float(p.get("y", 0)))
+			if node is Line2D:
+				(node as Line2D).add_point(pt)
+			elif node is Polygon2D:
+				var polygon: PackedVector2Array = (node as Polygon2D).polygon
+				polygon.append(pt)
+				(node as Polygon2D).polygon = polygon
+			_send_response({"success": true, "action": "add_point"})
+		"set_points":
+			var pts: Array = params.get("points", [])
+			var packed: PackedVector2Array = PackedVector2Array()
+			for p in pts:
+				packed.append(Vector2(float(p.get("x", 0)), float(p.get("y", 0))))
+			if node is Line2D:
+				(node as Line2D).points = packed
+			elif node is Polygon2D:
+				(node as Polygon2D).polygon = packed
+			_send_response({"success": true, "action": "set_points", "count": packed.size()})
+		"clear":
+			if node is Line2D:
+				(node as Line2D).clear_points()
+			elif node is Polygon2D:
+				(node as Polygon2D).polygon = PackedVector2Array()
+			_send_response({"success": true, "action": "clear"})
+		"get_points":
+			var pts: PackedVector2Array
+			if node is Line2D:
+				pts = (node as Line2D).points
+			elif node is Polygon2D:
+				pts = (node as Polygon2D).polygon
+			else:
+				_send_response({"error": "Node is not Line2D or Polygon2D"})
+				return
+			var result: Array = []
+			for p in pts:
+				result.append({"x": p.x, "y": p.y})
+			_send_response({"success": true, "action": "get_points", "points": result})
+		_:
+			_send_response({"error": "Unknown shape_2d action: %s" % action})
+
+
+func _cmd_path_2d(params: Dictionary) -> void:
+	var action: String = params.get("action", "create")
+	match action:
+		"create":
+			var parent_path: String = params.get("parent_path", "/root")
+			var parent: Node = get_tree().root.get_node_or_null(parent_path)
+			if parent == null:
+				_send_response({"error": "Parent not found: %s" % parent_path})
+				return
+			var path_node: Path2D = Path2D.new()
+			path_node.curve = Curve2D.new()
+			if params.has("name") and not (params["name"] as String).is_empty():
+				path_node.name = params["name"]
+			if params.has("points"):
+				for p in params["points"]:
+					path_node.curve.add_point(Vector2(float(p.get("x", 0)), float(p.get("y", 0))))
+			parent.add_child(path_node)
+			_send_response({"success": true, "action": "create", "path": str(path_node.get_path()), "point_count": path_node.curve.point_count})
+		"add_point":
+			var node_path: String = params.get("node_path", "")
+			var node: Node = get_tree().root.get_node_or_null(node_path)
+			if node == null or not node is Path2D:
+				_send_response({"error": "Path2D not found: %s" % node_path})
+				return
+			var p: Dictionary = params.get("point", {})
+			(node as Path2D).curve.add_point(Vector2(float(p.get("x", 0)), float(p.get("y", 0))))
+			_send_response({"success": true, "action": "add_point", "point_count": (node as Path2D).curve.point_count})
+		"get_points":
+			var node_path: String = params.get("node_path", "")
+			var node: Node = get_tree().root.get_node_or_null(node_path)
+			if node == null or not node is Path2D:
+				_send_response({"error": "Path2D not found: %s" % node_path})
+				return
+			var pts: Array = []
+			for i in (node as Path2D).curve.point_count:
+				var pt: Vector2 = (node as Path2D).curve.get_point_position(i)
+				pts.append({"x": pt.x, "y": pt.y})
+			_send_response({"success": true, "action": "get_points", "points": pts})
+		_:
+			_send_response({"error": "Unknown path_2d action: %s" % action})
+
+
+func _cmd_physics_2d(params: Dictionary) -> void:
+	var action: String = params.get("action", "ray")
+	await get_tree().physics_frame
+	var space: PhysicsDirectSpaceState2D = get_viewport().world_2d.direct_space_state
+	match action:
+		"ray":
+			var from_d: Dictionary = params.get("from", {})
+			var to_d: Dictionary = params.get("to", {})
+			var from: Vector2 = Vector2(float(from_d.get("x", 0)), float(from_d.get("y", 0)))
+			var to: Vector2 = Vector2(float(to_d.get("x", 0)), float(to_d.get("y", 0)))
+			var query: PhysicsRayQueryParameters2D = PhysicsRayQueryParameters2D.create(from, to)
+			if params.has("collision_mask"):
+				query.collision_mask = int(params["collision_mask"])
+			var result: Dictionary = space.intersect_ray(query)
+			if result.is_empty():
+				_send_response({"success": true, "action": "ray", "hit": false})
+			else:
+				_send_response({"success": true, "action": "ray", "hit": true, "position": _variant_to_json(result["position"]), "normal": _variant_to_json(result["normal"]), "collider": str(result.get("collider", ""))})
+		"overlap":
+			var node_path: String = params.get("node_path", "")
+			var node: Node = get_tree().root.get_node_or_null(node_path)
+			if node == null or not node is Area2D:
+				_send_response({"error": "Area2D not found: %s" % node_path})
+				return
+			var bodies: Array = (node as Area2D).get_overlapping_bodies()
+			var result: Array = []
+			for b in bodies:
+				result.append({"name": b.name, "path": str(b.get_path())})
+			_send_response({"success": true, "action": "overlap", "bodies": result})
+		_:
+			_send_response({"error": "Unknown physics_2d action: %s" % action})
+
+
+func _cmd_animation_tree(params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	var node: Node = get_tree().root.get_node_or_null(node_path)
+	if node == null or not node is AnimationTree:
+		_send_response({"error": "AnimationTree not found: %s" % node_path})
+		return
+	var tree: AnimationTree = node as AnimationTree
+	var action: String = params.get("action", "get_state")
+	match action:
+		"travel":
+			var state_name: String = params.get("state_name", "")
+			var playback = tree.get("parameters/playback")
+			if playback != null:
+				playback.travel(state_name)
+			_send_response({"success": true, "action": "travel", "state": state_name})
+		"set_param":
+			var param_name: String = params.get("param_name", "")
+			var param_value = params.get("param_value", 0)
+			tree.set("parameters/" + param_name, param_value)
+			_send_response({"success": true, "action": "set_param", "param": param_name})
+		"get_state":
+			var playback = tree.get("parameters/playback")
+			var current: String = ""
+			if playback != null:
+				current = playback.get_current_node()
+			_send_response({"success": true, "action": "get_state", "current": current})
+		_:
+			_send_response({"error": "Unknown animation_tree action: %s" % action})
+
+
+func _cmd_animation_control(params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	var node: Node = get_tree().root.get_node_or_null(node_path)
+	if node == null or not node is AnimationPlayer:
+		_send_response({"error": "AnimationPlayer not found: %s" % node_path})
+		return
+	var player: AnimationPlayer = node as AnimationPlayer
+	var action: String = params.get("action", "get_info")
+	match action:
+		"seek":
+			var pos: float = float(params.get("position", 0))
+			player.seek(pos)
+			_send_response({"success": true, "action": "seek", "position": pos})
+		"queue":
+			var anim: String = params.get("animation_name", "")
+			player.queue(anim)
+			_send_response({"success": true, "action": "queue", "animation": anim})
+		"set_speed":
+			player.speed_scale = float(params.get("speed", 1.0))
+			_send_response({"success": true, "action": "set_speed", "speed": player.speed_scale})
+		"stop":
+			player.stop()
+			_send_response({"success": true, "action": "stop"})
+		"get_info":
+			var anims: PackedStringArray = player.get_animation_list()
+			_send_response({"success": true, "action": "get_info", "current": player.current_animation, "playing": player.is_playing(), "animations": Array(anims), "speed_scale": player.speed_scale, "position": player.current_animation_position})
+		_:
+			_send_response({"error": "Unknown animation_control action: %s" % action})
+
+
+func _cmd_skeleton_ik(params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	var node: Node = get_tree().root.get_node_or_null(node_path)
+	if node == null or not node is SkeletonIK3D:
+		_send_response({"error": "SkeletonIK3D not found: %s" % node_path})
+		return
+	var ik: SkeletonIK3D = node as SkeletonIK3D
+	var action: String = params.get("action", "start")
+	match action:
+		"start":
+			ik.start()
+			_send_response({"success": true, "action": "start"})
+		"stop":
+			ik.stop()
+			_send_response({"success": true, "action": "stop"})
+		"set_target":
+			var t: Dictionary = params.get("target", {})
+			var target_tf: Transform3D = Transform3D.IDENTITY
+			target_tf.origin = Vector3(float(t.get("x", 0)), float(t.get("y", 0)), float(t.get("z", 0)))
+			ik.target = target_tf
+			_send_response({"success": true, "action": "set_target"})
+		_:
+			_send_response({"error": "Unknown skeleton_ik action: %s" % action})
+
+
+func _cmd_audio_effect(params: Dictionary) -> void:
+	var bus_name: String = params.get("bus_name", "Master")
+	var bus_idx: int = AudioServer.get_bus_index(bus_name)
+	if bus_idx < 0:
+		_send_response({"error": "Audio bus not found: %s" % bus_name})
+		return
+	var action: String = params.get("action", "list")
+	match action:
+		"list":
+			var effects: Array = []
+			for i in AudioServer.get_bus_effect_count(bus_idx):
+				var eff: AudioEffect = AudioServer.get_bus_effect(bus_idx, i)
+				effects.append({"index": i, "type": eff.get_class(), "enabled": AudioServer.is_bus_effect_enabled(bus_idx, i)})
+			_send_response({"success": true, "action": "list", "bus": bus_name, "effects": effects})
+		"add":
+			var effect_type: String = params.get("effect_type", "reverb")
+			var effect: AudioEffect
+			match effect_type:
+				"reverb": effect = AudioEffectReverb.new()
+				"delay": effect = AudioEffectDelay.new()
+				"chorus": effect = AudioEffectChorus.new()
+				"eq": effect = AudioEffectEQ6.new()
+				"compressor": effect = AudioEffectCompressor.new()
+				"limiter": effect = AudioEffectLimiter.new()
+				_:
+					_send_response({"error": "Unknown effect type: %s" % effect_type})
+					return
+			AudioServer.add_bus_effect(bus_idx, effect)
+			_send_response({"success": true, "action": "add", "effect_type": effect_type, "index": AudioServer.get_bus_effect_count(bus_idx) - 1})
+		"remove":
+			var idx: int = int(params.get("index", 0))
+			AudioServer.remove_bus_effect(bus_idx, idx)
+			_send_response({"success": true, "action": "remove", "index": idx})
+		_:
+			_send_response({"error": "Unknown audio_effect action: %s" % action})
+
+
+func _cmd_audio_bus_layout(params: Dictionary) -> void:
+	var action: String = params.get("action", "list")
+	match action:
+		"list":
+			var buses: Array = []
+			for i in AudioServer.bus_count:
+				buses.append({"index": i, "name": AudioServer.get_bus_name(i), "volume": AudioServer.get_bus_volume_db(i), "mute": AudioServer.is_bus_mute(i), "solo": AudioServer.is_bus_solo(i), "send": AudioServer.get_bus_send(i), "effect_count": AudioServer.get_bus_effect_count(i)})
+			_send_response({"success": true, "action": "list", "buses": buses})
+		"add":
+			var bus_name: String = params.get("bus_name", "New Bus")
+			AudioServer.add_bus()
+			var idx: int = AudioServer.bus_count - 1
+			AudioServer.set_bus_name(idx, bus_name)
+			_send_response({"success": true, "action": "add", "bus_name": bus_name, "index": idx})
+		"remove":
+			var bus_name: String = params.get("bus_name", "")
+			var idx: int = AudioServer.get_bus_index(bus_name)
+			if idx <= 0:
+				_send_response({"error": "Cannot remove bus: %s" % bus_name})
+				return
+			AudioServer.remove_bus(idx)
+			_send_response({"success": true, "action": "remove", "bus_name": bus_name})
+		"set_send":
+			var bus_name: String = params.get("bus_name", "")
+			var send_to: String = params.get("send_to", "Master")
+			var idx: int = AudioServer.get_bus_index(bus_name)
+			if idx < 0:
+				_send_response({"error": "Bus not found: %s" % bus_name})
+				return
+			AudioServer.set_bus_send(idx, send_to)
+			_send_response({"success": true, "action": "set_send", "bus": bus_name, "send_to": send_to})
+		_:
+			_send_response({"error": "Unknown audio_bus_layout action: %s" % action})
+
+
+func _cmd_audio_spatial(params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	var node: Node = get_tree().root.get_node_or_null(node_path)
+	if node == null or not node is AudioStreamPlayer3D:
+		_send_response({"error": "AudioStreamPlayer3D not found: %s" % node_path})
+		return
+	var player: AudioStreamPlayer3D = node as AudioStreamPlayer3D
+	var action: String = params.get("action", "get_info")
+	if action == "get_info":
+		_send_response({"success": true, "max_distance": player.max_distance, "unit_size": player.unit_size, "max_db": player.max_db, "playing": player.playing})
+		return
+	if params.has("max_distance"):
+		player.max_distance = float(params["max_distance"])
+	if params.has("unit_size"):
+		player.unit_size = float(params["unit_size"])
+	if params.has("max_db"):
+		player.max_db = float(params["max_db"])
+	_send_response({"success": true, "action": "configure"})
+
+
+# ==========================================================================
+# Batch 4: Locale (runtime)
+# ==========================================================================
+
+func _cmd_locale(params: Dictionary) -> void:
+	var action: String = params.get("action", "get")
+	match action:
+		"get":
+			_send_response({"success": true, "locale": TranslationServer.get_locale()})
+		"set":
+			var locale: String = params.get("locale", "en")
+			TranslationServer.set_locale(locale)
+			_send_response({"success": true, "action": "set", "locale": locale})
+		"translate":
+			var key: String = params.get("key", "")
+			var translated: String = tr(key)
+			_send_response({"success": true, "key": key, "translated": translated})
+		_:
+			_send_response({"error": "Unknown locale action: %s" % action})
+
+
+# ==========================================================================
+# Batch 5: UI Controls + Rendering + Resource Runtime
+# ==========================================================================
+
+func _cmd_ui_control(params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	var node: Node = get_tree().root.get_node_or_null(node_path)
+	if node == null or not node is Control:
+		_send_response({"error": "Control not found: %s" % node_path})
+		return
+	var ctrl: Control = node as Control
+	var action: String = params.get("action", "get_info")
+	match action:
+		"grab_focus":
+			ctrl.grab_focus()
+			_send_response({"success": true, "action": "grab_focus"})
+		"release_focus":
+			ctrl.release_focus()
+			_send_response({"success": true, "action": "release_focus"})
+		"configure":
+			if params.has("tooltip"):
+				ctrl.tooltip_text = str(params["tooltip"])
+			if params.has("mouse_filter"):
+				match params["mouse_filter"]:
+					"stop": ctrl.mouse_filter = Control.MOUSE_FILTER_STOP
+					"pass": ctrl.mouse_filter = Control.MOUSE_FILTER_PASS
+					"ignore": ctrl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			if params.has("min_size"):
+				var s: Dictionary = params["min_size"]
+				ctrl.custom_minimum_size = Vector2(float(s.get("x", 0)), float(s.get("y", 0)))
+			_send_response({"success": true, "action": "configure"})
+		"get_info":
+			_send_response({"success": true, "size": _variant_to_json(ctrl.size), "position": _variant_to_json(ctrl.position), "has_focus": ctrl.has_focus(), "visible": ctrl.visible, "tooltip": ctrl.tooltip_text, "mouse_filter": ctrl.mouse_filter})
+		_:
+			_send_response({"error": "Unknown ui_control action: %s" % action})
+
+
+func _cmd_ui_text(params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	var node: Node = get_tree().root.get_node_or_null(node_path)
+	if node == null:
+		_send_response({"error": "Node not found: %s" % node_path})
+		return
+	var action: String = params.get("action", "get")
+	match action:
+		"get":
+			var text: String = ""
+			if node is LineEdit: text = (node as LineEdit).text
+			elif node is TextEdit: text = (node as TextEdit).text
+			elif node is RichTextLabel: text = (node as RichTextLabel).text
+			else:
+				_send_response({"error": "Node is not a text control"})
+				return
+			_send_response({"success": true, "text": text})
+		"set":
+			var text: String = str(params.get("text", ""))
+			if node is LineEdit: (node as LineEdit).text = text
+			elif node is TextEdit: (node as TextEdit).text = text
+			elif node is RichTextLabel: (node as RichTextLabel).text = text
+			_send_response({"success": true, "action": "set"})
+		"append":
+			var text: String = str(params.get("text", ""))
+			if node is TextEdit: (node as TextEdit).text += text
+			elif node is RichTextLabel: (node as RichTextLabel).append_text(text)
+			_send_response({"success": true, "action": "append"})
+		"clear":
+			if node is LineEdit: (node as LineEdit).text = ""
+			elif node is TextEdit: (node as TextEdit).text = ""
+			elif node is RichTextLabel: (node as RichTextLabel).clear()
+			_send_response({"success": true, "action": "clear"})
+		"bbcode":
+			if node is RichTextLabel:
+				(node as RichTextLabel).bbcode_enabled = true
+				(node as RichTextLabel).text = str(params.get("text", ""))
+			_send_response({"success": true, "action": "bbcode"})
+		_:
+			_send_response({"error": "Unknown ui_text action: %s" % action})
+
+
+func _cmd_ui_popup(params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	var node: Node = get_tree().root.get_node_or_null(node_path)
+	if node == null or not node is Window:
+		_send_response({"error": "Window/Popup not found: %s" % node_path})
+		return
+	var win: Window = node as Window
+	var action: String = params.get("action", "popup_centered")
+	match action:
+		"popup_centered":
+			if params.has("size"):
+				var s: Dictionary = params["size"]
+				win.popup_centered(Vector2i(int(s.get("x", 200)), int(s.get("y", 100))))
+			else:
+				win.popup_centered()
+			_send_response({"success": true, "action": "popup_centered"})
+		"popup":
+			win.popup()
+			_send_response({"success": true, "action": "popup"})
+		"hide":
+			win.hide()
+			_send_response({"success": true, "action": "hide"})
+		"get_info":
+			_send_response({"success": true, "visible": win.visible, "title": win.title, "size": _variant_to_json(win.size)})
+		_:
+			_send_response({"error": "Unknown ui_popup action: %s" % action})
+
+
+func _cmd_ui_tree(params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	var node: Node = get_tree().root.get_node_or_null(node_path)
+	if node == null or not node is Tree:
+		_send_response({"error": "Tree not found: %s" % node_path})
+		return
+	var tree: Tree = node as Tree
+	var action: String = params.get("action", "get_items")
+	match action:
+		"get_items":
+			var items: Array = []
+			var root: TreeItem = tree.get_root()
+			if root != null:
+				_collect_tree_items(root, items, 0)
+			_send_response({"success": true, "action": "get_items", "items": items})
+		"add":
+			var text: String = str(params.get("text", "Item"))
+			var root: TreeItem = tree.get_root()
+			if root == null:
+				root = tree.create_item()
+			var item: TreeItem = tree.create_item(root)
+			item.set_text(int(params.get("column", 0)), text)
+			_send_response({"success": true, "action": "add", "text": text})
+		_:
+			_send_response({"error": "Unknown ui_tree action: %s" % action})
+
+func _collect_tree_items(item: TreeItem, result: Array, depth: int) -> void:
+	var col: int = 0
+	result.append({"text": item.get_text(col), "depth": depth, "collapsed": item.collapsed})
+	var child: TreeItem = item.get_first_child()
+	while child != null:
+		_collect_tree_items(child, result, depth + 1)
+		child = child.get_next()
+
+
+func _cmd_ui_item_list(params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	var node: Node = get_tree().root.get_node_or_null(node_path)
+	if node == null:
+		_send_response({"error": "Node not found: %s" % node_path})
+		return
+	var action: String = params.get("action", "get_items")
+	if node is ItemList:
+		var il: ItemList = node as ItemList
+		match action:
+			"get_items":
+				var items: Array = []
+				for i in il.item_count:
+					items.append({"index": i, "text": il.get_item_text(i), "selected": il.is_selected(i)})
+				_send_response({"success": true, "items": items})
+			"select":
+				il.select(int(params.get("index", 0)))
+				_send_response({"success": true, "action": "select"})
+			"add":
+				il.add_item(str(params.get("text", "Item")))
+				_send_response({"success": true, "action": "add"})
+			"remove":
+				il.remove_item(int(params.get("index", 0)))
+				_send_response({"success": true, "action": "remove"})
+			"clear":
+				il.clear()
+				_send_response({"success": true, "action": "clear"})
+			_:
+				_send_response({"error": "Unknown ui_item_list action: %s" % action})
+	elif node is OptionButton:
+		var ob: OptionButton = node as OptionButton
+		match action:
+			"get_items":
+				var items: Array = []
+				for i in ob.item_count:
+					items.append({"index": i, "text": ob.get_item_text(i)})
+				_send_response({"success": true, "items": items, "selected": ob.selected})
+			"select":
+				ob.select(int(params.get("index", 0)))
+				_send_response({"success": true, "action": "select"})
+			"add":
+				ob.add_item(str(params.get("text", "Item")))
+				_send_response({"success": true, "action": "add"})
+			_:
+				_send_response({"error": "Unknown action for OptionButton: %s" % action})
+	else:
+		_send_response({"error": "Node is not ItemList or OptionButton"})
+
+
+func _cmd_ui_tabs(params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	var node: Node = get_tree().root.get_node_or_null(node_path)
+	if node == null:
+		_send_response({"error": "Node not found: %s" % node_path})
+		return
+	var action: String = params.get("action", "get_tabs")
+	if node is TabContainer:
+		var tc: TabContainer = node as TabContainer
+		match action:
+			"get_tabs":
+				var tabs: Array = []
+				for i in tc.get_tab_count():
+					tabs.append({"index": i, "title": tc.get_tab_title(i)})
+				_send_response({"success": true, "tabs": tabs, "current": tc.current_tab})
+			"set_current":
+				tc.current_tab = int(params.get("index", 0))
+				_send_response({"success": true, "action": "set_current"})
+			"set_title":
+				tc.set_tab_title(int(params.get("index", 0)), str(params.get("title", "")))
+				_send_response({"success": true, "action": "set_title"})
+			_:
+				_send_response({"error": "Unknown ui_tabs action: %s" % action})
+	elif node is TabBar:
+		var tb: TabBar = node as TabBar
+		match action:
+			"get_tabs":
+				var tabs: Array = []
+				for i in tb.tab_count:
+					tabs.append({"index": i, "title": tb.get_tab_title(i)})
+				_send_response({"success": true, "tabs": tabs, "current": tb.current_tab})
+			"set_current":
+				tb.current_tab = int(params.get("index", 0))
+				_send_response({"success": true, "action": "set_current"})
+			_:
+				_send_response({"error": "Unknown ui_tabs action: %s" % action})
+	else:
+		_send_response({"error": "Node is not TabContainer or TabBar"})
+
+
+func _cmd_ui_menu(params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	var node: Node = get_tree().root.get_node_or_null(node_path)
+	if node == null or not node is PopupMenu:
+		_send_response({"error": "PopupMenu not found: %s" % node_path})
+		return
+	var menu: PopupMenu = node as PopupMenu
+	var action: String = params.get("action", "get_items")
+	match action:
+		"get_items":
+			var items: Array = []
+			for i in menu.item_count:
+				items.append({"index": i, "text": menu.get_item_text(i), "checked": menu.is_item_checked(i), "disabled": menu.is_item_disabled(i), "id": menu.get_item_id(i)})
+			_send_response({"success": true, "items": items})
+		"add":
+			var text: String = str(params.get("text", "Item"))
+			var id: int = int(params.get("id", -1))
+			menu.add_item(text, id)
+			_send_response({"success": true, "action": "add"})
+		"remove":
+			menu.remove_item(int(params.get("index", 0)))
+			_send_response({"success": true, "action": "remove"})
+		"set_checked":
+			menu.set_item_checked(int(params.get("index", 0)), bool(params.get("checked", true)))
+			_send_response({"success": true, "action": "set_checked"})
+		"clear":
+			menu.clear()
+			_send_response({"success": true, "action": "clear"})
+		_:
+			_send_response({"error": "Unknown ui_menu action: %s" % action})
+
+
+func _cmd_ui_range(params: Dictionary) -> void:
+	var node_path: String = params.get("node_path", "")
+	var node: Node = get_tree().root.get_node_or_null(node_path)
+	if node == null:
+		_send_response({"error": "Node not found: %s" % node_path})
+		return
+	var action: String = params.get("action", "get")
+	if node is Range:
+		var r: Range = node as Range
+		if action == "get":
+			_send_response({"success": true, "value": r.value, "min": r.min_value, "max": r.max_value, "step": r.step})
+			return
+		if params.has("value"): r.value = float(params["value"])
+		if params.has("min_value"): r.min_value = float(params["min_value"])
+		if params.has("max_value"): r.max_value = float(params["max_value"])
+		if params.has("step"): r.step = float(params["step"])
+		_send_response({"success": true, "action": "set", "value": r.value})
+	elif node is ColorPicker:
+		var cp: ColorPicker = node as ColorPicker
+		if action == "get":
+			var c: Color = cp.color
+			_send_response({"success": true, "color": {"r": c.r, "g": c.g, "b": c.b, "a": c.a}})
+			return
+		if params.has("color"):
+			var cd: Dictionary = params["color"]
+			cp.color = Color(float(cd.get("r", 0)), float(cd.get("g", 0)), float(cd.get("b", 0)), float(cd.get("a", 1)))
+		_send_response({"success": true, "action": "set"})
+	else:
+		_send_response({"error": "Node is not Range or ColorPicker"})
+
+
+func _cmd_render_settings(params: Dictionary) -> void:
+	var vp: Viewport = get_viewport()
+	var action: String = params.get("action", "get")
+	if action == "get":
+		_send_response({"success": true, "msaa_2d": vp.msaa_2d, "msaa_3d": vp.msaa_3d, "screen_space_aa": vp.screen_space_aa, "use_taa": vp.use_taa, "scaling_3d_mode": vp.scaling_3d_mode, "scaling_3d_scale": vp.scaling_3d_scale})
+		return
+	if params.has("msaa_2d"):
+		vp.msaa_2d = int(params["msaa_2d"]) as Viewport.MSAA
+	if params.has("msaa_3d"):
+		vp.msaa_3d = int(params["msaa_3d"]) as Viewport.MSAA
+	if params.has("fxaa"):
+		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if bool(params["fxaa"]) else Viewport.SCREEN_SPACE_AA_DISABLED
+	if params.has("taa"):
+		vp.use_taa = bool(params["taa"])
+	if params.has("scaling_mode"):
+		vp.scaling_3d_mode = int(params["scaling_mode"]) as Viewport.Scaling3DMode
+	if params.has("scaling_scale"):
+		vp.scaling_3d_scale = float(params["scaling_scale"])
+	_send_response({"success": true, "action": "set"})
+
+
+func _cmd_resource(params: Dictionary) -> void:
+	var action: String = params.get("action", "load")
+	var res_path: String = params.get("path", "")
+	match action:
+		"load":
+			if not ResourceLoader.exists(res_path):
+				_send_response({"error": "Resource not found: %s" % res_path})
+				return
+			var res: Resource = ResourceLoader.load(res_path)
+			if res == null:
+				_send_response({"error": "Failed to load resource: %s" % res_path})
+				return
+			_send_response({"success": true, "action": "load", "path": res_path, "type": res.get_class()})
+		"save":
+			var node_path: String = params.get("node_path", "")
+			var prop: String = params.get("property", "")
+			if node_path.is_empty():
+				_send_response({"error": "node_path is required for save"})
+				return
+			var node: Node = get_tree().root.get_node_or_null(node_path)
+			if node == null:
+				_send_response({"error": "Node not found: %s" % node_path})
+				return
+			var res = node.get(prop) if not prop.is_empty() else null
+			if res is Resource:
+				var err: int = ResourceSaver.save(res, res_path)
+				_send_response({"success": err == OK, "action": "save", "path": res_path})
+			else:
+				_send_response({"error": "Property is not a Resource"})
+		"exists":
+			_send_response({"success": true, "action": "exists", "path": res_path, "exists": ResourceLoader.exists(res_path)})
+		_:
+			_send_response({"error": "Unknown resource action: %s" % action})
+
+
 func _exit_tree() -> void:
 	_clear_debug_draw()
+	if _websocket != null:
+		_websocket.close()
+		_websocket = null
 	if _client != null:
 		_client.disconnect_from_host()
 		_client = null

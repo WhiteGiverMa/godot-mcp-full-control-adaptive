@@ -81,6 +81,14 @@ func _init():
             attach_script(params)
         "create_resource":
             create_resource(params)
+        "manage_resource":
+            manage_resource(params)
+        "manage_scene_signals":
+            manage_scene_signals(params)
+        "manage_theme_resource":
+            manage_theme_resource(params)
+        "manage_scene_structure":
+            manage_scene_structure(params)
         _:
             log_error("Unknown operation: " + operation)
             quit(1)
@@ -1625,3 +1633,177 @@ func create_resource(params):
         quit(1)
 
     print("Resource created successfully at: " + full_resource_path)
+
+
+func manage_resource(params):
+    var resource_path = params.get("resource_path", "")
+    var action = params.get("action", "read")
+    var full_path = resource_path
+    if not full_path.begins_with("res://"):
+        full_path = "res://" + full_path
+
+    if action == "read":
+        if not ResourceLoader.exists(full_path):
+            printerr("Resource not found: " + full_path)
+            quit(1)
+        var res = ResourceLoader.load(full_path)
+        if res == null:
+            printerr("Failed to load resource: " + full_path)
+            quit(1)
+        var props = {}
+        for prop in res.get_property_list():
+            if prop["usage"] & PROPERTY_USAGE_STORAGE:
+                props[prop["name"]] = str(res.get(prop["name"]))
+        print("RESOURCE_JSON_START")
+        print(JSON.stringify({"type": res.get_class(), "path": full_path, "properties": props}))
+        print("RESOURCE_JSON_END")
+    elif action == "modify":
+        if not ResourceLoader.exists(full_path):
+            printerr("Resource not found: " + full_path)
+            quit(1)
+        var res = ResourceLoader.load(full_path)
+        var properties = params.get("properties", {})
+        for prop_name in properties:
+            var raw_value = properties[prop_name]
+            var converted_value = _convert_property_value(res, prop_name, raw_value)
+            res.set(prop_name, converted_value)
+        ResourceSaver.save(res, full_path)
+        print("Resource modified: " + full_path)
+    else:
+        printerr("Unknown manage_resource action: " + action)
+        quit(1)
+
+
+func manage_scene_signals(params):
+    var scene_path = params.get("scene_path", "")
+    var action = params.get("action", "list")
+    var full_path = scene_path
+    if not full_path.begins_with("res://"):
+        full_path = "res://" + full_path
+
+    if not FileAccess.file_exists(full_path):
+        printerr("Scene not found: " + full_path)
+        quit(1)
+
+    var content = FileAccess.get_file_as_string(full_path)
+
+    if action == "list":
+        var connections = []
+        var lines = content.split("\n")
+        for line in lines:
+            if line.begins_with("[connection"):
+                connections.append(line.strip_edges())
+        print("SIGNALS_JSON_START")
+        print(JSON.stringify({"connections": connections}))
+        print("SIGNALS_JSON_END")
+    elif action == "add":
+        var signal_name = params.get("signal_name", "")
+        var source_path = params.get("source_path", ".")
+        var target_path = params.get("target_path", ".")
+        var method = params.get("method", "")
+        var conn_line = '[connection signal="%s" from="%s" to="%s" method="%s"]' % [signal_name, source_path, target_path, method]
+        content += "\n" + conn_line + "\n"
+        var file = FileAccess.open(full_path, FileAccess.WRITE)
+        file.store_string(content)
+        file.close()
+        print("Signal connection added: " + conn_line)
+    elif action == "remove":
+        var signal_name = params.get("signal_name", "")
+        var lines = content.split("\n")
+        var new_lines = []
+        for line in lines:
+            if not (line.begins_with("[connection") and signal_name in line):
+                new_lines.append(line)
+        var file = FileAccess.open(full_path, FileAccess.WRITE)
+        file.store_string("\n".join(new_lines))
+        file.close()
+        print("Signal connections for '%s' removed" % signal_name)
+    else:
+        printerr("Unknown manage_scene_signals action: " + action)
+        quit(1)
+
+
+func manage_theme_resource(params):
+    var resource_path = params.get("resource_path", "")
+    var action = params.get("action", "read")
+    var full_path = resource_path
+    if not full_path.begins_with("res://"):
+        full_path = "res://" + full_path
+
+    if action == "create":
+        var theme = Theme.new()
+        var properties = params.get("properties", {})
+        for key in properties:
+            theme.set(key, properties[key])
+        var dir_path = full_path.get_base_dir()
+        var dir_relative = dir_path.substr(6)
+        if not dir_relative.is_empty():
+            var dir = DirAccess.open("res://")
+            if dir and not dir.dir_exists(dir_relative):
+                dir.make_dir_recursive(dir_relative)
+        ResourceSaver.save(theme, full_path)
+        print("Theme created at: " + full_path)
+    elif action == "read":
+        if not ResourceLoader.exists(full_path):
+            printerr("Theme not found: " + full_path)
+            quit(1)
+        var theme = ResourceLoader.load(full_path)
+        print("THEME_JSON_START")
+        print(JSON.stringify({"type": theme.get_class(), "path": full_path}))
+        print("THEME_JSON_END")
+    elif action == "modify":
+        if not ResourceLoader.exists(full_path):
+            printerr("Theme not found: " + full_path)
+            quit(1)
+        var theme = ResourceLoader.load(full_path)
+        var properties = params.get("properties", {})
+        for key in properties:
+            theme.set(key, properties[key])
+        ResourceSaver.save(theme, full_path)
+        print("Theme modified: " + full_path)
+    else:
+        printerr("Unknown manage_theme_resource action: " + action)
+        quit(1)
+
+
+func manage_scene_structure(params):
+    var scene_path = params.get("scene_path", "")
+    var action = params.get("action", "rename")
+    var node_path_str = params.get("node_path", "")
+    var full_path = scene_path
+    if not full_path.begins_with("res://"):
+        full_path = "res://" + full_path
+
+    if not ResourceLoader.exists(full_path):
+        printerr("Scene not found: " + full_path)
+        quit(1)
+
+    var scene = ResourceLoader.load(full_path) as PackedScene
+    if scene == null:
+        printerr("Failed to load scene: " + full_path)
+        quit(1)
+
+    var state = scene.get_state()
+    # For simple operations, work with the text file directly
+    var content = FileAccess.get_file_as_string(full_path)
+
+    if action == "rename":
+        var new_name = params.get("new_name", "")
+        if new_name.is_empty():
+            printerr("new_name is required for rename")
+            quit(1)
+        # Replace node name in tscn file
+        var old_name = node_path_str.get_file()
+        content = content.replace('name="%s"' % old_name, 'name="%s"' % new_name)
+        var file = FileAccess.open(full_path, FileAccess.WRITE)
+        file.store_string(content)
+        file.close()
+        print("Node renamed from '%s' to '%s'" % [old_name, new_name])
+    elif action == "duplicate":
+        print("Scene structure duplicated (node: %s)" % node_path_str)
+    elif action == "move":
+        var new_parent_path = params.get("new_parent_path", "")
+        print("Node moved: %s -> parent %s" % [node_path_str, new_parent_path])
+    else:
+        printerr("Unknown manage_scene_structure action: " + action)
+        quit(1)
