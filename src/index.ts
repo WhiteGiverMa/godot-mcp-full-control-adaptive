@@ -23,6 +23,17 @@ import {
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 
+import {
+  PARAMETER_MAPPINGS,
+  REVERSE_PARAMETER_MAPPINGS,
+  normalizeParameters,
+  convertCamelToSnakeCase,
+  validatePath,
+  createErrorResponse,
+  isGodot44OrLater,
+  type OperationParams,
+} from './utils.js';
+
 // Check if debug mode is enabled
 const DEBUG_MODE: boolean = process.env.DEBUG === 'true';
 const GODOT_DEBUG_MODE: boolean = true; // Always use GODOT DEBUG MODE
@@ -64,13 +75,6 @@ interface GameConnection {
 }
 
 /**
- * Interface for operation parameters
- */
-interface OperationParams {
-  [key: string]: any;
-}
-
-/**
  * Main server class for the Godot MCP server
  */
 class GodotServer {
@@ -91,53 +95,7 @@ class GodotServer {
   private readonly INTERACTION_PORT = 9090;
   private readonly AUTOLOAD_NAME = 'McpInteractionServer';
 
-  /**
-   * Parameter name mappings between snake_case and camelCase
-   * This allows the server to accept both formats
-   */
-  private parameterMappings: Record<string, string> = {
-    'project_path': 'projectPath',
-    'scene_path': 'scenePath',
-    'root_node_type': 'rootNodeType',
-    'parent_node_path': 'parentNodePath',
-    'node_type': 'nodeType',
-    'node_name': 'nodeName',
-    'texture_path': 'texturePath',
-    'node_path': 'nodePath',
-    'output_path': 'outputPath',
-    'mesh_item_names': 'meshItemNames',
-    'new_path': 'newPath',
-    'file_path': 'filePath',
-    'directory': 'directory',
-    'recursive': 'recursive',
-    'scene': 'scene',
-    'type_hint': 'typeHint',
-    'parent_path': 'parentPath',
-    'signal_name': 'signalName',
-    'target_path': 'targetPath',
-    'class_name': 'className',
-    'root_path': 'rootPath',
-    'new_parent_path': 'newParentPath',
-    'keep_global_transform': 'keepGlobalTransform',
-    'script_path': 'scriptPath',
-    'resource_type': 'resourceType',
-    'resource_path': 'resourcePath',
-    'final_value': 'finalValue',
-    'trans_type': 'transType',
-    'ease_type': 'easeType',
-  };
-
-  /**
-   * Reverse mapping from camelCase to snake_case
-   * Generated from parameterMappings for quick lookups
-   */
-  private reverseParameterMappings: Record<string, string> = {};
-
   constructor(config?: GodotServerConfig) {
-    // Initialize reverse parameter mappings
-    for (const [snakeCase, camelCase] of Object.entries(this.parameterMappings)) {
-      this.reverseParameterMappings[camelCase] = snakeCase;
-    }
     // Apply configuration if provided
     let debugMode = DEBUG_MODE;
     let godotDebugMode = GODOT_DEBUG_MODE;
@@ -208,48 +166,6 @@ class GodotServer {
     }
   }
 
-  /**
-   * Create a standardized error response with possible solutions
-   */
-  private createErrorResponse(message: string, possibleSolutions: string[] = []): any {
-    // Log the error
-    console.error(`[SERVER] Error response: ${message}`);
-    if (possibleSolutions.length > 0) {
-      console.error(`[SERVER] Possible solutions: ${possibleSolutions.join(', ')}`);
-    }
-
-    const response: any = {
-      content: [
-        {
-          type: 'text',
-          text: message,
-        },
-      ],
-      isError: true,
-    };
-
-    if (possibleSolutions.length > 0) {
-      response.content.push({
-        type: 'text',
-        text: 'Possible solutions:\n- ' + possibleSolutions.join('\n- '),
-      });
-    }
-
-    return response;
-  }
-
-  /**
-   * Validate a path to prevent path traversal attacks
-   */
-  private validatePath(path: string): boolean {
-    // Basic validation to prevent path traversal
-    if (!path || path.includes('..')) {
-      return false;
-    }
-
-    // Add more validation as needed
-    return true;
-  }
 
   /**
    * Synchronous validation for constructor use
@@ -619,78 +535,6 @@ class GodotServer {
     await this.server.close();
   }
 
-  /**
-   * Check if the Godot version is 4.4 or later
-   * @param version The Godot version string
-   * @returns True if the version is 4.4 or later
-   */
-  private isGodot44OrLater(version: string): boolean {
-    const match = version.match(/^(\d+)\.(\d+)/);
-    if (match) {
-      const major = parseInt(match[1], 10);
-      const minor = parseInt(match[2], 10);
-      return major > 4 || (major === 4 && minor >= 4);
-    }
-    return false;
-  }
-
-  /**
-   * Normalize parameters to camelCase format
-   * @param params Object with either snake_case or camelCase keys
-   * @returns Object with all keys in camelCase format
-   */
-  private normalizeParameters(params: OperationParams): OperationParams {
-    if (!params || typeof params !== 'object') {
-      return params;
-    }
-    
-    const result: OperationParams = {};
-    
-    for (const key in params) {
-      if (Object.prototype.hasOwnProperty.call(params, key)) {
-        let normalizedKey = key;
-        
-        // If the key is in snake_case, convert it to camelCase using our mapping
-        if (key.includes('_') && this.parameterMappings[key]) {
-          normalizedKey = this.parameterMappings[key];
-        }
-        
-        // Handle nested objects recursively
-        if (typeof params[key] === 'object' && params[key] !== null && !Array.isArray(params[key])) {
-          result[normalizedKey] = this.normalizeParameters(params[key] as OperationParams);
-        } else {
-          result[normalizedKey] = params[key];
-        }
-      }
-    }
-    
-    return result;
-  }
-
-  /**
-   * Convert camelCase keys to snake_case
-   * @param params Object with camelCase keys
-   * @returns Object with snake_case keys
-   */
-  private convertCamelToSnakeCase(params: OperationParams): OperationParams {
-    const result: OperationParams = {};
-    
-    for (const key in params) {
-      if (Object.prototype.hasOwnProperty.call(params, key)) {
-        // Convert camelCase to snake_case
-        const snakeKey = this.reverseParameterMappings[key] || key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-        
-        // Handle nested objects recursively
-        if (typeof params[key] === 'object' && params[key] !== null && !Array.isArray(params[key])) {
-          result[snakeKey] = this.convertCamelToSnakeCase(params[key] as OperationParams);
-        } else {
-          result[snakeKey] = params[key];
-        }
-      }
-    }
-    
-    return result;
-  }
 
   /**
    * Execute a Godot operation using the operations script
@@ -708,7 +552,7 @@ class GodotServer {
     this.logDebug(`Original operation params: ${JSON.stringify(params)}`);
 
     // Convert camelCase parameters to snake_case for Godot script
-    const snakeCaseParams = this.convertCamelToSnakeCase(params);
+    const snakeCaseParams = convertCamelToSnakeCase(params);
     this.logDebug(`Converted snake_case params: ${JSON.stringify(snakeCaseParams)}`);
 
 
@@ -1803,17 +1647,17 @@ class GodotServer {
    */
   private async handleLaunchEditor(args: any) {
     // Normalize parameters to camelCase
-    args = this.normalizeParameters(args);
+    args = normalizeParameters(args);
     
     if (!args.projectPath) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         'Project path is required',
         ['Provide a valid path to a Godot project directory']
       );
     }
 
-    if (!this.validatePath(args.projectPath)) {
-      return this.createErrorResponse(
+    if (!validatePath(args.projectPath)) {
+      return createErrorResponse(
         'Invalid project path',
         ['Provide a valid path without ".." or other potentially unsafe characters']
       );
@@ -1824,7 +1668,7 @@ class GodotServer {
       if (!this.godotPath) {
         await this.detectGodotPath();
         if (!this.godotPath) {
-          return this.createErrorResponse(
+          return createErrorResponse(
             'Could not find a valid Godot executable path',
             [
               'Ensure Godot is installed correctly',
@@ -1837,7 +1681,7 @@ class GodotServer {
       // Check if the project directory exists and contains a project.godot file
       const projectFile = join(args.projectPath, 'project.godot');
       if (!existsSync(projectFile)) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Not a valid Godot project: ${args.projectPath}`,
           [
             'Ensure the path points to a directory containing a project.godot file',
@@ -1865,7 +1709,7 @@ class GodotServer {
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      return this.createErrorResponse(
+      return createErrorResponse(
         `Failed to launch Godot editor: ${errorMessage}`,
         [
           'Ensure Godot is installed correctly',
@@ -1882,17 +1726,17 @@ class GodotServer {
    */
   private async handleRunProject(args: any) {
     // Normalize parameters to camelCase
-    args = this.normalizeParameters(args);
+    args = normalizeParameters(args);
     
     if (!args.projectPath) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         'Project path is required',
         ['Provide a valid path to a Godot project directory']
       );
     }
 
-    if (!this.validatePath(args.projectPath)) {
-      return this.createErrorResponse(
+    if (!validatePath(args.projectPath)) {
+      return createErrorResponse(
         'Invalid project path',
         ['Provide a valid path without ".." or other potentially unsafe characters']
       );
@@ -1902,7 +1746,7 @@ class GodotServer {
       // Check if the project directory exists and contains a project.godot file
       const projectFile = join(args.projectPath, 'project.godot');
       if (!existsSync(projectFile)) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Not a valid Godot project: ${args.projectPath}`,
           [
             'Ensure the path points to a directory containing a project.godot file',
@@ -1925,7 +1769,7 @@ class GodotServer {
       this.injectInteractionServer(args.projectPath);
 
       const cmdArgs = ['-d', '--path', args.projectPath];
-      if (args.scene && this.validatePath(args.scene)) {
+      if (args.scene && validatePath(args.scene)) {
         this.logDebug(`Adding scene parameter: ${args.scene}`);
         cmdArgs.push(args.scene);
       }
@@ -1987,7 +1831,7 @@ class GodotServer {
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      return this.createErrorResponse(
+      return createErrorResponse(
         `Failed to run Godot project: ${errorMessage}`,
         [
           'Ensure Godot is installed correctly',
@@ -2003,7 +1847,7 @@ class GodotServer {
    */
   private async handleGetDebugOutput() {
     if (!this.activeProcess) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         'No active Godot process.',
         [
           'Use run_project to start a Godot project first',
@@ -2034,7 +1878,7 @@ class GodotServer {
    */
   private async handleStopProject() {
     if (!this.activeProcess) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         'No active Godot process to stop.',
         [
           'Use run_project to start a Godot project first',
@@ -2083,7 +1927,7 @@ class GodotServer {
       if (!this.godotPath) {
         await this.detectGodotPath();
         if (!this.godotPath) {
-          return this.createErrorResponse(
+          return createErrorResponse(
             'Could not find a valid Godot executable path',
             [
               'Ensure Godot is installed correctly',
@@ -2105,7 +1949,7 @@ class GodotServer {
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      return this.createErrorResponse(
+      return createErrorResponse(
         `Failed to get Godot version: ${errorMessage}`,
         [
           'Ensure Godot is installed correctly',
@@ -2120,17 +1964,17 @@ class GodotServer {
    */
   private async handleListProjects(args: any) {
     // Normalize parameters to camelCase
-    args = this.normalizeParameters(args);
+    args = normalizeParameters(args);
     
     if (!args.directory) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         'Directory is required',
         ['Provide a valid directory path to search for Godot projects']
       );
     }
 
-    if (!this.validatePath(args.directory)) {
-      return this.createErrorResponse(
+    if (!validatePath(args.directory)) {
+      return createErrorResponse(
         'Invalid directory path',
         ['Provide a valid path without ".." or other potentially unsafe characters']
       );
@@ -2139,7 +1983,7 @@ class GodotServer {
     try {
       this.logDebug(`Listing Godot projects in directory: ${args.directory}`);
       if (!existsSync(args.directory)) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Directory does not exist: ${args.directory}`,
           ['Provide a valid directory path that exists on the system']
         );
@@ -2157,7 +2001,7 @@ class GodotServer {
         ],
       };
     } catch (error: any) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         `Failed to list projects: ${error?.message || 'Unknown error'}`,
         [
           'Ensure the directory exists and is accessible',
@@ -2234,17 +2078,17 @@ class GodotServer {
    */
   private async handleGetProjectInfo(args: any) {
     // Normalize parameters to camelCase
-    args = this.normalizeParameters(args);
+    args = normalizeParameters(args);
     
     if (!args.projectPath) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         'Project path is required',
         ['Provide a valid path to a Godot project directory']
       );
     }
   
-    if (!this.validatePath(args.projectPath)) {
-      return this.createErrorResponse(
+    if (!validatePath(args.projectPath)) {
+      return createErrorResponse(
         'Invalid project path',
         ['Provide a valid path without ".." or other potentially unsafe characters']
       );
@@ -2255,7 +2099,7 @@ class GodotServer {
       if (!this.godotPath) {
         await this.detectGodotPath();
         if (!this.godotPath) {
-          return this.createErrorResponse(
+          return createErrorResponse(
             'Could not find a valid Godot executable path',
             [
               'Ensure Godot is installed correctly',
@@ -2268,7 +2112,7 @@ class GodotServer {
       // Check if the project directory exists and contains a project.godot file
       const projectFile = join(args.projectPath, 'project.godot');
       if (!existsSync(projectFile)) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Not a valid Godot project: ${args.projectPath}`,
           [
             'Ensure the path points to a directory containing a project.godot file',
@@ -2319,7 +2163,7 @@ class GodotServer {
         ],
       };
     } catch (error: any) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         `Failed to get project info: ${error?.message || 'Unknown error'}`,
         [
           'Ensure Godot is installed correctly',
@@ -2335,17 +2179,17 @@ class GodotServer {
    */
   private async handleCreateScene(args: any) {
     // Normalize parameters to camelCase
-    args = this.normalizeParameters(args);
+    args = normalizeParameters(args);
     
     if (!args.projectPath || !args.scenePath) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         'Project path and scene path are required',
         ['Provide valid paths for both the project and the scene']
       );
     }
 
-    if (!this.validatePath(args.projectPath) || !this.validatePath(args.scenePath)) {
-      return this.createErrorResponse(
+    if (!validatePath(args.projectPath) || !validatePath(args.scenePath)) {
+      return createErrorResponse(
         'Invalid path',
         ['Provide valid paths without ".." or other potentially unsafe characters']
       );
@@ -2355,7 +2199,7 @@ class GodotServer {
       // Check if the project directory exists and contains a project.godot file
       const projectFile = join(args.projectPath, 'project.godot');
       if (!existsSync(projectFile)) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Not a valid Godot project: ${args.projectPath}`,
           [
             'Ensure the path points to a directory containing a project.godot file',
@@ -2374,7 +2218,7 @@ class GodotServer {
       const { stdout, stderr } = await this.executeOperation('create_scene', params, args.projectPath);
 
       if (stderr && stderr.includes('Failed to')) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Failed to create scene: ${stderr}`,
           [
             'Check if the root node type is valid',
@@ -2393,7 +2237,7 @@ class GodotServer {
         ],
       };
     } catch (error: any) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         `Failed to create scene: ${error?.message || 'Unknown error'}`,
         [
           'Ensure Godot is installed correctly',
@@ -2409,17 +2253,17 @@ class GodotServer {
    */
   private async handleAddNode(args: any) {
     // Normalize parameters to camelCase
-    args = this.normalizeParameters(args);
+    args = normalizeParameters(args);
     
     if (!args.projectPath || !args.scenePath || !args.nodeType || !args.nodeName) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         'Missing required parameters',
         ['Provide projectPath, scenePath, nodeType, and nodeName']
       );
     }
 
-    if (!this.validatePath(args.projectPath) || !this.validatePath(args.scenePath)) {
-      return this.createErrorResponse(
+    if (!validatePath(args.projectPath) || !validatePath(args.scenePath)) {
+      return createErrorResponse(
         'Invalid path',
         ['Provide valid paths without ".." or other potentially unsafe characters']
       );
@@ -2429,7 +2273,7 @@ class GodotServer {
       // Check if the project directory exists and contains a project.godot file
       const projectFile = join(args.projectPath, 'project.godot');
       if (!existsSync(projectFile)) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Not a valid Godot project: ${args.projectPath}`,
           [
             'Ensure the path points to a directory containing a project.godot file',
@@ -2441,7 +2285,7 @@ class GodotServer {
       // Check if the scene file exists
       const scenePath = join(args.projectPath, args.scenePath);
       if (!existsSync(scenePath)) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Scene file does not exist: ${args.scenePath}`,
           [
             'Ensure the scene path is correct',
@@ -2470,7 +2314,7 @@ class GodotServer {
       const { stdout, stderr } = await this.executeOperation('add_node', params, args.projectPath);
 
       if (stderr && stderr.includes('Failed to')) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Failed to add node: ${stderr}`,
           [
             'Check if the node type is valid',
@@ -2489,7 +2333,7 @@ class GodotServer {
         ],
       };
     } catch (error: any) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         `Failed to add node: ${error?.message || 'Unknown error'}`,
         [
           'Ensure Godot is installed correctly',
@@ -2505,22 +2349,22 @@ class GodotServer {
    */
   private async handleLoadSprite(args: any) {
     // Normalize parameters to camelCase
-    args = this.normalizeParameters(args);
+    args = normalizeParameters(args);
     
     if (!args.projectPath || !args.scenePath || !args.nodePath || !args.texturePath) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         'Missing required parameters',
         ['Provide projectPath, scenePath, nodePath, and texturePath']
       );
     }
 
     if (
-      !this.validatePath(args.projectPath) ||
-      !this.validatePath(args.scenePath) ||
-      !this.validatePath(args.nodePath) ||
-      !this.validatePath(args.texturePath)
+      !validatePath(args.projectPath) ||
+      !validatePath(args.scenePath) ||
+      !validatePath(args.nodePath) ||
+      !validatePath(args.texturePath)
     ) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         'Invalid path',
         ['Provide valid paths without ".." or other potentially unsafe characters']
       );
@@ -2530,7 +2374,7 @@ class GodotServer {
       // Check if the project directory exists and contains a project.godot file
       const projectFile = join(args.projectPath, 'project.godot');
       if (!existsSync(projectFile)) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Not a valid Godot project: ${args.projectPath}`,
           [
             'Ensure the path points to a directory containing a project.godot file',
@@ -2542,7 +2386,7 @@ class GodotServer {
       // Check if the scene file exists
       const scenePath = join(args.projectPath, args.scenePath);
       if (!existsSync(scenePath)) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Scene file does not exist: ${args.scenePath}`,
           [
             'Ensure the scene path is correct',
@@ -2554,7 +2398,7 @@ class GodotServer {
       // Check if the texture file exists
       const texturePath = join(args.projectPath, args.texturePath);
       if (!existsSync(texturePath)) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Texture file does not exist: ${args.texturePath}`,
           [
             'Ensure the texture path is correct',
@@ -2574,7 +2418,7 @@ class GodotServer {
       const { stdout, stderr } = await this.executeOperation('load_sprite', params, args.projectPath);
 
       if (stderr && stderr.includes('Failed to')) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Failed to load sprite: ${stderr}`,
           [
             'Check if the node path is correct',
@@ -2593,7 +2437,7 @@ class GodotServer {
         ],
       };
     } catch (error: any) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         `Failed to load sprite: ${error?.message || 'Unknown error'}`,
         [
           'Ensure Godot is installed correctly',
@@ -2609,21 +2453,21 @@ class GodotServer {
    */
   private async handleExportMeshLibrary(args: any) {
     // Normalize parameters to camelCase
-    args = this.normalizeParameters(args);
+    args = normalizeParameters(args);
     
     if (!args.projectPath || !args.scenePath || !args.outputPath) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         'Missing required parameters',
         ['Provide projectPath, scenePath, and outputPath']
       );
     }
 
     if (
-      !this.validatePath(args.projectPath) ||
-      !this.validatePath(args.scenePath) ||
-      !this.validatePath(args.outputPath)
+      !validatePath(args.projectPath) ||
+      !validatePath(args.scenePath) ||
+      !validatePath(args.outputPath)
     ) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         'Invalid path',
         ['Provide valid paths without ".." or other potentially unsafe characters']
       );
@@ -2633,7 +2477,7 @@ class GodotServer {
       // Check if the project directory exists and contains a project.godot file
       const projectFile = join(args.projectPath, 'project.godot');
       if (!existsSync(projectFile)) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Not a valid Godot project: ${args.projectPath}`,
           [
             'Ensure the path points to a directory containing a project.godot file',
@@ -2645,7 +2489,7 @@ class GodotServer {
       // Check if the scene file exists
       const scenePath = join(args.projectPath, args.scenePath);
       if (!existsSync(scenePath)) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Scene file does not exist: ${args.scenePath}`,
           [
             'Ensure the scene path is correct',
@@ -2669,7 +2513,7 @@ class GodotServer {
       const { stdout, stderr } = await this.executeOperation('export_mesh_library', params, args.projectPath);
 
       if (stderr && stderr.includes('Failed to')) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Failed to export mesh library: ${stderr}`,
           [
             'Check if the scene contains valid 3D meshes',
@@ -2688,7 +2532,7 @@ class GodotServer {
         ],
       };
     } catch (error: any) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         `Failed to export mesh library: ${error?.message || 'Unknown error'}`,
         [
           'Ensure Godot is installed correctly',
@@ -2704,25 +2548,25 @@ class GodotServer {
    */
   private async handleSaveScene(args: any) {
     // Normalize parameters to camelCase
-    args = this.normalizeParameters(args);
+    args = normalizeParameters(args);
     
     if (!args.projectPath || !args.scenePath) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         'Missing required parameters',
         ['Provide projectPath and scenePath']
       );
     }
 
-    if (!this.validatePath(args.projectPath) || !this.validatePath(args.scenePath)) {
-      return this.createErrorResponse(
+    if (!validatePath(args.projectPath) || !validatePath(args.scenePath)) {
+      return createErrorResponse(
         'Invalid path',
         ['Provide valid paths without ".." or other potentially unsafe characters']
       );
     }
 
     // If newPath is provided, validate it
-    if (args.newPath && !this.validatePath(args.newPath)) {
-      return this.createErrorResponse(
+    if (args.newPath && !validatePath(args.newPath)) {
+      return createErrorResponse(
         'Invalid new path',
         ['Provide a valid new path without ".." or other potentially unsafe characters']
       );
@@ -2732,7 +2576,7 @@ class GodotServer {
       // Check if the project directory exists and contains a project.godot file
       const projectFile = join(args.projectPath, 'project.godot');
       if (!existsSync(projectFile)) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Not a valid Godot project: ${args.projectPath}`,
           [
             'Ensure the path points to a directory containing a project.godot file',
@@ -2744,7 +2588,7 @@ class GodotServer {
       // Check if the scene file exists
       const scenePath = join(args.projectPath, args.scenePath);
       if (!existsSync(scenePath)) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Scene file does not exist: ${args.scenePath}`,
           [
             'Ensure the scene path is correct',
@@ -2767,7 +2611,7 @@ class GodotServer {
       const { stdout, stderr } = await this.executeOperation('save_scene', params, args.projectPath);
 
       if (stderr && stderr.includes('Failed to')) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Failed to save scene: ${stderr}`,
           [
             'Check if the scene file is valid',
@@ -2787,7 +2631,7 @@ class GodotServer {
         ],
       };
     } catch (error: any) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         `Failed to save scene: ${error?.message || 'Unknown error'}`,
         [
           'Ensure Godot is installed correctly',
@@ -2803,17 +2647,17 @@ class GodotServer {
    */
   private async handleGetUid(args: any) {
     // Normalize parameters to camelCase
-    args = this.normalizeParameters(args);
+    args = normalizeParameters(args);
     
     if (!args.projectPath || !args.filePath) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         'Missing required parameters',
         ['Provide projectPath and filePath']
       );
     }
 
-    if (!this.validatePath(args.projectPath) || !this.validatePath(args.filePath)) {
-      return this.createErrorResponse(
+    if (!validatePath(args.projectPath) || !validatePath(args.filePath)) {
+      return createErrorResponse(
         'Invalid path',
         ['Provide valid paths without ".." or other potentially unsafe characters']
       );
@@ -2824,7 +2668,7 @@ class GodotServer {
       if (!this.godotPath) {
         await this.detectGodotPath();
         if (!this.godotPath) {
-          return this.createErrorResponse(
+          return createErrorResponse(
             'Could not find a valid Godot executable path',
             [
               'Ensure Godot is installed correctly',
@@ -2837,7 +2681,7 @@ class GodotServer {
       // Check if the project directory exists and contains a project.godot file
       const projectFile = join(args.projectPath, 'project.godot');
       if (!existsSync(projectFile)) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Not a valid Godot project: ${args.projectPath}`,
           [
             'Ensure the path points to a directory containing a project.godot file',
@@ -2849,7 +2693,7 @@ class GodotServer {
       // Check if the file exists
       const filePath = join(args.projectPath, args.filePath);
       if (!existsSync(filePath)) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `File does not exist: ${args.filePath}`,
           ['Ensure the file path is correct']
         );
@@ -2859,8 +2703,8 @@ class GodotServer {
       const { stdout: versionOutput } = await execFileAsync(this.godotPath!, ['--version']);
       const version = versionOutput.trim();
 
-      if (!this.isGodot44OrLater(version)) {
-        return this.createErrorResponse(
+      if (!isGodot44OrLater(version)) {
+        return createErrorResponse(
           `UIDs are only supported in Godot 4.4 or later. Current version: ${version}`,
           [
             'Upgrade to Godot 4.4 or later to use UIDs',
@@ -2878,7 +2722,7 @@ class GodotServer {
       const { stdout, stderr } = await this.executeOperation('get_uid', params, args.projectPath);
 
       if (stderr && stderr.includes('Failed to')) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Failed to get UID: ${stderr}`,
           [
             'Check if the file is a valid Godot resource',
@@ -2896,7 +2740,7 @@ class GodotServer {
         ],
       };
     } catch (error: any) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         `Failed to get UID: ${error?.message || 'Unknown error'}`,
         [
           'Ensure Godot is installed correctly',
@@ -2914,16 +2758,16 @@ class GodotServer {
    */
   private async handleGameScreenshot() {
     if (!this.activeProcess) {
-      return this.createErrorResponse('No active Godot process. Use run_project first.');
+      return createErrorResponse('No active Godot process. Use run_project first.');
     }
     if (!this.gameConnection.connected) {
-      return this.createErrorResponse('Not connected to game interaction server. Wait a moment and try again.');
+      return createErrorResponse('Not connected to game interaction server. Wait a moment and try again.');
     }
 
     try {
       const response = await this.sendGameCommand('screenshot');
       if (response.error) {
-        return this.createErrorResponse(`Screenshot failed: ${response.error}`);
+        return createErrorResponse(`Screenshot failed: ${response.error}`);
       }
       return {
         content: [
@@ -2939,7 +2783,7 @@ class GodotServer {
         ],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Screenshot failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Screenshot failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -2948,13 +2792,13 @@ class GodotServer {
    */
   private async handleGameClick(args: any) {
     if (!this.activeProcess) {
-      return this.createErrorResponse('No active Godot process. Use run_project first.');
+      return createErrorResponse('No active Godot process. Use run_project first.');
     }
     if (!this.gameConnection.connected) {
-      return this.createErrorResponse('Not connected to game interaction server.');
+      return createErrorResponse('Not connected to game interaction server.');
     }
 
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     const x = args.x ?? 0;
     const y = args.y ?? 0;
     const button = args.button ?? 1;
@@ -2962,13 +2806,13 @@ class GodotServer {
     try {
       const response = await this.sendGameCommand('click', { x, y, button });
       if (response.error) {
-        return this.createErrorResponse(`Click failed: ${response.error}`);
+        return createErrorResponse(`Click failed: ${response.error}`);
       }
       return {
         content: [{ type: 'text', text: `Clicked at (${x}, ${y}) with button ${button}` }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Click failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Click failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -2977,10 +2821,10 @@ class GodotServer {
    */
   private async handleGameKeyPress(args: any) {
     if (!this.activeProcess) {
-      return this.createErrorResponse('No active Godot process. Use run_project first.');
+      return createErrorResponse('No active Godot process. Use run_project first.');
     }
     if (!this.gameConnection.connected) {
-      return this.createErrorResponse('Not connected to game interaction server.');
+      return createErrorResponse('Not connected to game interaction server.');
     }
 
     args = args || {};
@@ -2990,19 +2834,19 @@ class GodotServer {
     if (args.pressed !== undefined) params.pressed = args.pressed;
 
     if (!params.key && !params.action) {
-      return this.createErrorResponse('Must provide either "key" or "action" parameter.');
+      return createErrorResponse('Must provide either "key" or "action" parameter.');
     }
 
     try {
       const response = await this.sendGameCommand('key_press', params);
       if (response.error) {
-        return this.createErrorResponse(`Key press failed: ${response.error}`);
+        return createErrorResponse(`Key press failed: ${response.error}`);
       }
       return {
         content: [{ type: 'text', text: `Key press: ${JSON.stringify(params)}` }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Key press failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Key press failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3011,10 +2855,10 @@ class GodotServer {
    */
   private async handleGameMouseMove(args: any) {
     if (!this.activeProcess) {
-      return this.createErrorResponse('No active Godot process. Use run_project first.');
+      return createErrorResponse('No active Godot process. Use run_project first.');
     }
     if (!this.gameConnection.connected) {
-      return this.createErrorResponse('Not connected to game interaction server.');
+      return createErrorResponse('Not connected to game interaction server.');
     }
 
     args = args || {};
@@ -3028,13 +2872,13 @@ class GodotServer {
     try {
       const response = await this.sendGameCommand('mouse_move', params);
       if (response.error) {
-        return this.createErrorResponse(`Mouse move failed: ${response.error}`);
+        return createErrorResponse(`Mouse move failed: ${response.error}`);
       }
       return {
         content: [{ type: 'text', text: `Mouse moved to (${params.x}, ${params.y})` }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Mouse move failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Mouse move failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3043,22 +2887,22 @@ class GodotServer {
    */
   private async handleGameGetUi() {
     if (!this.activeProcess) {
-      return this.createErrorResponse('No active Godot process. Use run_project first.');
+      return createErrorResponse('No active Godot process. Use run_project first.');
     }
     if (!this.gameConnection.connected) {
-      return this.createErrorResponse('Not connected to game interaction server.');
+      return createErrorResponse('Not connected to game interaction server.');
     }
 
     try {
       const response = await this.sendGameCommand('get_ui_elements');
       if (response.error) {
-        return this.createErrorResponse(`Get UI elements failed: ${response.error}`);
+        return createErrorResponse(`Get UI elements failed: ${response.error}`);
       }
       return {
         content: [{ type: 'text', text: JSON.stringify(response.elements, null, 2) }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Get UI elements failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Get UI elements failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3067,22 +2911,22 @@ class GodotServer {
    */
   private async handleGameGetSceneTree() {
     if (!this.activeProcess) {
-      return this.createErrorResponse('No active Godot process. Use run_project first.');
+      return createErrorResponse('No active Godot process. Use run_project first.');
     }
     if (!this.gameConnection.connected) {
-      return this.createErrorResponse('Not connected to game interaction server.');
+      return createErrorResponse('Not connected to game interaction server.');
     }
 
     try {
       const response = await this.sendGameCommand('get_scene_tree');
       if (response.error) {
-        return this.createErrorResponse(`Get scene tree failed: ${response.error}`);
+        return createErrorResponse(`Get scene tree failed: ${response.error}`);
       }
       return {
         content: [{ type: 'text', text: JSON.stringify(response.tree, null, 2) }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Get scene tree failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Get scene tree failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3093,27 +2937,27 @@ class GodotServer {
    */
   private async handleGameEval(args: any) {
     if (!this.activeProcess) {
-      return this.createErrorResponse('No active Godot process. Use run_project first.');
+      return createErrorResponse('No active Godot process. Use run_project first.');
     }
     if (!this.gameConnection.connected) {
-      return this.createErrorResponse('Not connected to game interaction server.');
+      return createErrorResponse('Not connected to game interaction server.');
     }
 
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.code) {
-      return this.createErrorResponse('code parameter is required.');
+      return createErrorResponse('code parameter is required.');
     }
 
     try {
       const response = await this.sendGameCommand('eval', { code: args.code }, 30000);
       if (response.error) {
-        return this.createErrorResponse(`Eval failed: ${response.error}`);
+        return createErrorResponse(`Eval failed: ${response.error}`);
       }
       return {
         content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Eval failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Eval failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3122,15 +2966,15 @@ class GodotServer {
    */
   private async handleGameGetProperty(args: any) {
     if (!this.activeProcess) {
-      return this.createErrorResponse('No active Godot process. Use run_project first.');
+      return createErrorResponse('No active Godot process. Use run_project first.');
     }
     if (!this.gameConnection.connected) {
-      return this.createErrorResponse('Not connected to game interaction server.');
+      return createErrorResponse('Not connected to game interaction server.');
     }
 
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.nodePath || !args.property) {
-      return this.createErrorResponse('nodePath and property are required.');
+      return createErrorResponse('nodePath and property are required.');
     }
 
     try {
@@ -3139,13 +2983,13 @@ class GodotServer {
         property: args.property,
       });
       if (response.error) {
-        return this.createErrorResponse(`Get property failed: ${response.error}`);
+        return createErrorResponse(`Get property failed: ${response.error}`);
       }
       return {
         content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Get property failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Get property failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3154,15 +2998,15 @@ class GodotServer {
    */
   private async handleGameSetProperty(args: any) {
     if (!this.activeProcess) {
-      return this.createErrorResponse('No active Godot process. Use run_project first.');
+      return createErrorResponse('No active Godot process. Use run_project first.');
     }
     if (!this.gameConnection.connected) {
-      return this.createErrorResponse('Not connected to game interaction server.');
+      return createErrorResponse('Not connected to game interaction server.');
     }
 
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.nodePath || !args.property) {
-      return this.createErrorResponse('nodePath and property are required.');
+      return createErrorResponse('nodePath and property are required.');
     }
 
     try {
@@ -3173,13 +3017,13 @@ class GodotServer {
         type_hint: args.typeHint || '',
       });
       if (response.error) {
-        return this.createErrorResponse(`Set property failed: ${response.error}`);
+        return createErrorResponse(`Set property failed: ${response.error}`);
       }
       return {
         content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Set property failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Set property failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3188,15 +3032,15 @@ class GodotServer {
    */
   private async handleGameCallMethod(args: any) {
     if (!this.activeProcess) {
-      return this.createErrorResponse('No active Godot process. Use run_project first.');
+      return createErrorResponse('No active Godot process. Use run_project first.');
     }
     if (!this.gameConnection.connected) {
-      return this.createErrorResponse('Not connected to game interaction server.');
+      return createErrorResponse('Not connected to game interaction server.');
     }
 
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.nodePath || !args.method) {
-      return this.createErrorResponse('nodePath and method are required.');
+      return createErrorResponse('nodePath and method are required.');
     }
 
     try {
@@ -3206,13 +3050,13 @@ class GodotServer {
         args: args.args || [],
       });
       if (response.error) {
-        return this.createErrorResponse(`Call method failed: ${response.error}`);
+        return createErrorResponse(`Call method failed: ${response.error}`);
       }
       return {
         content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Call method failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Call method failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3221,15 +3065,15 @@ class GodotServer {
    */
   private async handleGameGetNodeInfo(args: any) {
     if (!this.activeProcess) {
-      return this.createErrorResponse('No active Godot process. Use run_project first.');
+      return createErrorResponse('No active Godot process. Use run_project first.');
     }
     if (!this.gameConnection.connected) {
-      return this.createErrorResponse('Not connected to game interaction server.');
+      return createErrorResponse('Not connected to game interaction server.');
     }
 
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.nodePath) {
-      return this.createErrorResponse('nodePath is required.');
+      return createErrorResponse('nodePath is required.');
     }
 
     try {
@@ -3237,13 +3081,13 @@ class GodotServer {
         node_path: args.nodePath,
       });
       if (response.error) {
-        return this.createErrorResponse(`Get node info failed: ${response.error}`);
+        return createErrorResponse(`Get node info failed: ${response.error}`);
       }
       return {
         content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Get node info failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Get node info failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3252,15 +3096,15 @@ class GodotServer {
    */
   private async handleGameInstantiateScene(args: any) {
     if (!this.activeProcess) {
-      return this.createErrorResponse('No active Godot process. Use run_project first.');
+      return createErrorResponse('No active Godot process. Use run_project first.');
     }
     if (!this.gameConnection.connected) {
-      return this.createErrorResponse('Not connected to game interaction server.');
+      return createErrorResponse('Not connected to game interaction server.');
     }
 
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.scenePath) {
-      return this.createErrorResponse('scenePath is required.');
+      return createErrorResponse('scenePath is required.');
     }
 
     try {
@@ -3269,13 +3113,13 @@ class GodotServer {
         parent_path: args.parentPath || '/root',
       });
       if (response.error) {
-        return this.createErrorResponse(`Instantiate scene failed: ${response.error}`);
+        return createErrorResponse(`Instantiate scene failed: ${response.error}`);
       }
       return {
         content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Instantiate scene failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Instantiate scene failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3284,15 +3128,15 @@ class GodotServer {
    */
   private async handleGameRemoveNode(args: any) {
     if (!this.activeProcess) {
-      return this.createErrorResponse('No active Godot process. Use run_project first.');
+      return createErrorResponse('No active Godot process. Use run_project first.');
     }
     if (!this.gameConnection.connected) {
-      return this.createErrorResponse('Not connected to game interaction server.');
+      return createErrorResponse('Not connected to game interaction server.');
     }
 
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.nodePath) {
-      return this.createErrorResponse('nodePath is required.');
+      return createErrorResponse('nodePath is required.');
     }
 
     try {
@@ -3300,13 +3144,13 @@ class GodotServer {
         node_path: args.nodePath,
       });
       if (response.error) {
-        return this.createErrorResponse(`Remove node failed: ${response.error}`);
+        return createErrorResponse(`Remove node failed: ${response.error}`);
       }
       return {
         content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Remove node failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Remove node failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3315,15 +3159,15 @@ class GodotServer {
    */
   private async handleGameChangeScene(args: any) {
     if (!this.activeProcess) {
-      return this.createErrorResponse('No active Godot process. Use run_project first.');
+      return createErrorResponse('No active Godot process. Use run_project first.');
     }
     if (!this.gameConnection.connected) {
-      return this.createErrorResponse('Not connected to game interaction server.');
+      return createErrorResponse('Not connected to game interaction server.');
     }
 
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.scenePath) {
-      return this.createErrorResponse('scenePath is required.');
+      return createErrorResponse('scenePath is required.');
     }
 
     try {
@@ -3331,13 +3175,13 @@ class GodotServer {
         scene_path: args.scenePath,
       });
       if (response.error) {
-        return this.createErrorResponse(`Change scene failed: ${response.error}`);
+        return createErrorResponse(`Change scene failed: ${response.error}`);
       }
       return {
         content: [{ type: 'text', text: `Scene changed to: ${args.scenePath}` }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Change scene failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Change scene failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3346,10 +3190,10 @@ class GodotServer {
    */
   private async handleGamePause(args: any) {
     if (!this.activeProcess) {
-      return this.createErrorResponse('No active Godot process. Use run_project first.');
+      return createErrorResponse('No active Godot process. Use run_project first.');
     }
     if (!this.gameConnection.connected) {
-      return this.createErrorResponse('Not connected to game interaction server.');
+      return createErrorResponse('Not connected to game interaction server.');
     }
 
     args = args || {};
@@ -3358,13 +3202,13 @@ class GodotServer {
     try {
       const response = await this.sendGameCommand('pause', { paused });
       if (response.error) {
-        return this.createErrorResponse(`Pause failed: ${response.error}`);
+        return createErrorResponse(`Pause failed: ${response.error}`);
       }
       return {
         content: [{ type: 'text', text: `Game ${paused ? 'paused' : 'unpaused'}` }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Pause failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Pause failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3373,22 +3217,22 @@ class GodotServer {
    */
   private async handleGamePerformance() {
     if (!this.activeProcess) {
-      return this.createErrorResponse('No active Godot process. Use run_project first.');
+      return createErrorResponse('No active Godot process. Use run_project first.');
     }
     if (!this.gameConnection.connected) {
-      return this.createErrorResponse('Not connected to game interaction server.');
+      return createErrorResponse('Not connected to game interaction server.');
     }
 
     try {
       const response = await this.sendGameCommand('get_performance', {});
       if (response.error) {
-        return this.createErrorResponse(`Get performance failed: ${response.error}`);
+        return createErrorResponse(`Get performance failed: ${response.error}`);
       }
       return {
         content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Get performance failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Get performance failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3397,10 +3241,10 @@ class GodotServer {
    */
   private async handleGameWait(args: any) {
     if (!this.activeProcess) {
-      return this.createErrorResponse('No active Godot process. Use run_project first.');
+      return createErrorResponse('No active Godot process. Use run_project first.');
     }
     if (!this.gameConnection.connected) {
-      return this.createErrorResponse('Not connected to game interaction server.');
+      return createErrorResponse('Not connected to game interaction server.');
     }
 
     args = args || {};
@@ -3409,13 +3253,13 @@ class GodotServer {
     try {
       const response = await this.sendGameCommand('wait', { frames }, 30000);
       if (response.error) {
-        return this.createErrorResponse(`Wait failed: ${response.error}`);
+        return createErrorResponse(`Wait failed: ${response.error}`);
       }
       return {
         content: [{ type: 'text', text: `Waited ${frames} frames` }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Wait failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Wait failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3425,23 +3269,23 @@ class GodotServer {
    * Handle the read_scene tool - Read a scene file structure
    */
   private async handleReadScene(args: any) {
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.projectPath || !args.scenePath) {
-      return this.createErrorResponse('projectPath and scenePath are required.');
+      return createErrorResponse('projectPath and scenePath are required.');
     }
 
-    if (!this.validatePath(args.projectPath) || !this.validatePath(args.scenePath)) {
-      return this.createErrorResponse('Invalid path.');
+    if (!validatePath(args.projectPath) || !validatePath(args.scenePath)) {
+      return createErrorResponse('Invalid path.');
     }
 
     const projectFile = join(args.projectPath, 'project.godot');
     if (!existsSync(projectFile)) {
-      return this.createErrorResponse(`Not a valid Godot project: ${args.projectPath}`);
+      return createErrorResponse(`Not a valid Godot project: ${args.projectPath}`);
     }
 
     const scenePath = join(args.projectPath, args.scenePath);
     if (!existsSync(scenePath)) {
-      return this.createErrorResponse(`Scene file does not exist: ${args.scenePath}`);
+      return createErrorResponse(`Scene file does not exist: ${args.scenePath}`);
     }
 
     try {
@@ -3473,7 +3317,7 @@ class GodotServer {
         content: [{ type: 'text', text: `Scene read output:\n${stdout}\n${stderr ? 'Errors:\n' + stderr : ''}` }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Failed to read scene: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Failed to read scene: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3481,23 +3325,23 @@ class GodotServer {
    * Handle the modify_scene_node tool
    */
   private async handleModifySceneNode(args: any) {
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.projectPath || !args.scenePath || !args.nodePath || !args.properties) {
-      return this.createErrorResponse('projectPath, scenePath, nodePath, and properties are required.');
+      return createErrorResponse('projectPath, scenePath, nodePath, and properties are required.');
     }
 
-    if (!this.validatePath(args.projectPath) || !this.validatePath(args.scenePath)) {
-      return this.createErrorResponse('Invalid path.');
+    if (!validatePath(args.projectPath) || !validatePath(args.scenePath)) {
+      return createErrorResponse('Invalid path.');
     }
 
     const projectFile = join(args.projectPath, 'project.godot');
     if (!existsSync(projectFile)) {
-      return this.createErrorResponse(`Not a valid Godot project: ${args.projectPath}`);
+      return createErrorResponse(`Not a valid Godot project: ${args.projectPath}`);
     }
 
     const scenePath = join(args.projectPath, args.scenePath);
     if (!existsSync(scenePath)) {
-      return this.createErrorResponse(`Scene file does not exist: ${args.scenePath}`);
+      return createErrorResponse(`Scene file does not exist: ${args.scenePath}`);
     }
 
     try {
@@ -3508,14 +3352,14 @@ class GodotServer {
       }, args.projectPath);
 
       if (stderr && stderr.includes('Failed to')) {
-        return this.createErrorResponse(`Failed to modify scene node: ${stderr}`);
+        return createErrorResponse(`Failed to modify scene node: ${stderr}`);
       }
 
       return {
         content: [{ type: 'text', text: `Node modified successfully.\n\nOutput: ${stdout}` }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Failed to modify scene node: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Failed to modify scene node: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3523,23 +3367,23 @@ class GodotServer {
    * Handle the remove_scene_node tool
    */
   private async handleRemoveSceneNode(args: any) {
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.projectPath || !args.scenePath || !args.nodePath) {
-      return this.createErrorResponse('projectPath, scenePath, and nodePath are required.');
+      return createErrorResponse('projectPath, scenePath, and nodePath are required.');
     }
 
-    if (!this.validatePath(args.projectPath) || !this.validatePath(args.scenePath)) {
-      return this.createErrorResponse('Invalid path.');
+    if (!validatePath(args.projectPath) || !validatePath(args.scenePath)) {
+      return createErrorResponse('Invalid path.');
     }
 
     const projectFile = join(args.projectPath, 'project.godot');
     if (!existsSync(projectFile)) {
-      return this.createErrorResponse(`Not a valid Godot project: ${args.projectPath}`);
+      return createErrorResponse(`Not a valid Godot project: ${args.projectPath}`);
     }
 
     const scenePath = join(args.projectPath, args.scenePath);
     if (!existsSync(scenePath)) {
-      return this.createErrorResponse(`Scene file does not exist: ${args.scenePath}`);
+      return createErrorResponse(`Scene file does not exist: ${args.scenePath}`);
     }
 
     try {
@@ -3549,14 +3393,14 @@ class GodotServer {
       }, args.projectPath);
 
       if (stderr && stderr.includes('Failed to')) {
-        return this.createErrorResponse(`Failed to remove scene node: ${stderr}`);
+        return createErrorResponse(`Failed to remove scene node: ${stderr}`);
       }
 
       return {
         content: [{ type: 'text', text: `Node removed successfully.\n\nOutput: ${stdout}` }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Failed to remove scene node: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Failed to remove scene node: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3566,18 +3410,18 @@ class GodotServer {
    * Handle the read_project_settings tool - Parse project.godot as JSON
    */
   private async handleReadProjectSettings(args: any) {
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.projectPath) {
-      return this.createErrorResponse('projectPath is required.');
+      return createErrorResponse('projectPath is required.');
     }
 
-    if (!this.validatePath(args.projectPath)) {
-      return this.createErrorResponse('Invalid path.');
+    if (!validatePath(args.projectPath)) {
+      return createErrorResponse('Invalid path.');
     }
 
     const projectFile = join(args.projectPath, 'project.godot');
     if (!existsSync(projectFile)) {
-      return this.createErrorResponse(`Not a valid Godot project: ${args.projectPath}`);
+      return createErrorResponse(`Not a valid Godot project: ${args.projectPath}`);
     }
 
     try {
@@ -3612,7 +3456,7 @@ class GodotServer {
         content: [{ type: 'text', text: JSON.stringify(sections, null, 2) }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Failed to read project settings: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Failed to read project settings: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3620,18 +3464,18 @@ class GodotServer {
    * Handle the modify_project_settings tool - Change a project.godot setting
    */
   private async handleModifyProjectSettings(args: any) {
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.projectPath || !args.section || !args.key || args.value === undefined) {
-      return this.createErrorResponse('projectPath, section, key, and value are required.');
+      return createErrorResponse('projectPath, section, key, and value are required.');
     }
 
-    if (!this.validatePath(args.projectPath)) {
-      return this.createErrorResponse('Invalid path.');
+    if (!validatePath(args.projectPath)) {
+      return createErrorResponse('Invalid path.');
     }
 
     const projectFile = join(args.projectPath, 'project.godot');
     if (!existsSync(projectFile)) {
-      return this.createErrorResponse(`Not a valid Godot project: ${args.projectPath}`);
+      return createErrorResponse(`Not a valid Godot project: ${args.projectPath}`);
     }
 
     try {
@@ -3670,7 +3514,7 @@ class GodotServer {
         content: [{ type: 'text', text: `Setting updated: [${args.section}] ${args.key}=${args.value}` }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Failed to modify project settings: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Failed to modify project settings: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -3678,17 +3522,17 @@ class GodotServer {
    * Handle the list_project_files tool - List files with extension filtering
    */
   private async handleListProjectFiles(args: any) {
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.projectPath) {
-      return this.createErrorResponse('projectPath is required.');
+      return createErrorResponse('projectPath is required.');
     }
 
-    if (!this.validatePath(args.projectPath)) {
-      return this.createErrorResponse('Invalid path.');
+    if (!validatePath(args.projectPath)) {
+      return createErrorResponse('Invalid path.');
     }
 
     if (!existsSync(args.projectPath)) {
-      return this.createErrorResponse(`Directory does not exist: ${args.projectPath}`);
+      return createErrorResponse(`Directory does not exist: ${args.projectPath}`);
     }
 
     try {
@@ -3697,7 +3541,7 @@ class GodotServer {
         : args.projectPath;
 
       if (!existsSync(baseDir)) {
-        return this.createErrorResponse(`Subdirectory does not exist: ${args.subdirectory}`);
+        return createErrorResponse(`Subdirectory does not exist: ${args.subdirectory}`);
       }
 
       const files: string[] = [];
@@ -3731,19 +3575,19 @@ class GodotServer {
         content: [{ type: 'text', text: JSON.stringify({ count: files.length, files }, null, 2) }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Failed to list project files: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Failed to list project files: ${error?.message || 'Unknown error'}`);
     }
   }
 
   // ==================== Runtime Signal/Animation/Group Handlers ====================
 
   private async handleGameConnectSignal(args: any) {
-    if (!this.activeProcess) return this.createErrorResponse('No active Godot process. Use run_project first.');
-    if (!this.gameConnection.connected) return this.createErrorResponse('Not connected to game interaction server.');
+    if (!this.activeProcess) return createErrorResponse('No active Godot process. Use run_project first.');
+    if (!this.gameConnection.connected) return createErrorResponse('Not connected to game interaction server.');
 
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.nodePath || !args.signalName || !args.targetPath || !args.method) {
-      return this.createErrorResponse('nodePath, signalName, targetPath, and method are required.');
+      return createErrorResponse('nodePath, signalName, targetPath, and method are required.');
     }
 
     try {
@@ -3753,20 +3597,20 @@ class GodotServer {
         target_path: args.targetPath,
         method: args.method,
       });
-      if (response.error) return this.createErrorResponse(`Connect signal failed: ${response.error}`);
+      if (response.error) return createErrorResponse(`Connect signal failed: ${response.error}`);
       return { content: [{ type: 'text', text: JSON.stringify(response, null, 2) }] };
     } catch (error: any) {
-      return this.createErrorResponse(`Connect signal failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Connect signal failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
   private async handleGameDisconnectSignal(args: any) {
-    if (!this.activeProcess) return this.createErrorResponse('No active Godot process. Use run_project first.');
-    if (!this.gameConnection.connected) return this.createErrorResponse('Not connected to game interaction server.');
+    if (!this.activeProcess) return createErrorResponse('No active Godot process. Use run_project first.');
+    if (!this.gameConnection.connected) return createErrorResponse('Not connected to game interaction server.');
 
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.nodePath || !args.signalName || !args.targetPath || !args.method) {
-      return this.createErrorResponse('nodePath, signalName, targetPath, and method are required.');
+      return createErrorResponse('nodePath, signalName, targetPath, and method are required.');
     }
 
     try {
@@ -3776,20 +3620,20 @@ class GodotServer {
         target_path: args.targetPath,
         method: args.method,
       });
-      if (response.error) return this.createErrorResponse(`Disconnect signal failed: ${response.error}`);
+      if (response.error) return createErrorResponse(`Disconnect signal failed: ${response.error}`);
       return { content: [{ type: 'text', text: JSON.stringify(response, null, 2) }] };
     } catch (error: any) {
-      return this.createErrorResponse(`Disconnect signal failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Disconnect signal failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
   private async handleGameEmitSignal(args: any) {
-    if (!this.activeProcess) return this.createErrorResponse('No active Godot process. Use run_project first.');
-    if (!this.gameConnection.connected) return this.createErrorResponse('Not connected to game interaction server.');
+    if (!this.activeProcess) return createErrorResponse('No active Godot process. Use run_project first.');
+    if (!this.gameConnection.connected) return createErrorResponse('Not connected to game interaction server.');
 
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.nodePath || !args.signalName) {
-      return this.createErrorResponse('nodePath and signalName are required.');
+      return createErrorResponse('nodePath and signalName are required.');
     }
 
     try {
@@ -3798,20 +3642,20 @@ class GodotServer {
         signal_name: args.signalName,
         args: args.args || [],
       });
-      if (response.error) return this.createErrorResponse(`Emit signal failed: ${response.error}`);
+      if (response.error) return createErrorResponse(`Emit signal failed: ${response.error}`);
       return { content: [{ type: 'text', text: JSON.stringify(response, null, 2) }] };
     } catch (error: any) {
-      return this.createErrorResponse(`Emit signal failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Emit signal failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
   private async handleGamePlayAnimation(args: any) {
-    if (!this.activeProcess) return this.createErrorResponse('No active Godot process. Use run_project first.');
-    if (!this.gameConnection.connected) return this.createErrorResponse('Not connected to game interaction server.');
+    if (!this.activeProcess) return createErrorResponse('No active Godot process. Use run_project first.');
+    if (!this.gameConnection.connected) return createErrorResponse('Not connected to game interaction server.');
 
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.nodePath) {
-      return this.createErrorResponse('nodePath is required.');
+      return createErrorResponse('nodePath is required.');
     }
 
     try {
@@ -3820,20 +3664,20 @@ class GodotServer {
         action: args.action || 'play',
         animation: args.animation || '',
       });
-      if (response.error) return this.createErrorResponse(`Play animation failed: ${response.error}`);
+      if (response.error) return createErrorResponse(`Play animation failed: ${response.error}`);
       return { content: [{ type: 'text', text: JSON.stringify(response, null, 2) }] };
     } catch (error: any) {
-      return this.createErrorResponse(`Play animation failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Play animation failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
   private async handleGameTweenProperty(args: any) {
-    if (!this.activeProcess) return this.createErrorResponse('No active Godot process. Use run_project first.');
-    if (!this.gameConnection.connected) return this.createErrorResponse('Not connected to game interaction server.');
+    if (!this.activeProcess) return createErrorResponse('No active Godot process. Use run_project first.');
+    if (!this.gameConnection.connected) return createErrorResponse('Not connected to game interaction server.');
 
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.nodePath || !args.property || args.finalValue === undefined) {
-      return this.createErrorResponse('nodePath, property, and finalValue are required.');
+      return createErrorResponse('nodePath, property, and finalValue are required.');
     }
 
     try {
@@ -3845,38 +3689,38 @@ class GodotServer {
         trans_type: args.transType || 0,
         ease_type: args.easeType || 2,
       });
-      if (response.error) return this.createErrorResponse(`Tween property failed: ${response.error}`);
+      if (response.error) return createErrorResponse(`Tween property failed: ${response.error}`);
       return { content: [{ type: 'text', text: JSON.stringify(response, null, 2) }] };
     } catch (error: any) {
-      return this.createErrorResponse(`Tween property failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Tween property failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
   private async handleGameGetNodesInGroup(args: any) {
-    if (!this.activeProcess) return this.createErrorResponse('No active Godot process. Use run_project first.');
-    if (!this.gameConnection.connected) return this.createErrorResponse('Not connected to game interaction server.');
+    if (!this.activeProcess) return createErrorResponse('No active Godot process. Use run_project first.');
+    if (!this.gameConnection.connected) return createErrorResponse('Not connected to game interaction server.');
 
     args = args || {};
     if (!args.group) {
-      return this.createErrorResponse('group is required.');
+      return createErrorResponse('group is required.');
     }
 
     try {
       const response = await this.sendGameCommand('get_nodes_in_group', { group: args.group });
-      if (response.error) return this.createErrorResponse(`Get nodes in group failed: ${response.error}`);
+      if (response.error) return createErrorResponse(`Get nodes in group failed: ${response.error}`);
       return { content: [{ type: 'text', text: JSON.stringify(response, null, 2) }] };
     } catch (error: any) {
-      return this.createErrorResponse(`Get nodes in group failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Get nodes in group failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
   private async handleGameFindNodesByClass(args: any) {
-    if (!this.activeProcess) return this.createErrorResponse('No active Godot process. Use run_project first.');
-    if (!this.gameConnection.connected) return this.createErrorResponse('Not connected to game interaction server.');
+    if (!this.activeProcess) return createErrorResponse('No active Godot process. Use run_project first.');
+    if (!this.gameConnection.connected) return createErrorResponse('Not connected to game interaction server.');
 
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.className) {
-      return this.createErrorResponse('className is required.');
+      return createErrorResponse('className is required.');
     }
 
     try {
@@ -3884,20 +3728,20 @@ class GodotServer {
         class_name: args.className,
         root_path: args.rootPath || '/root',
       });
-      if (response.error) return this.createErrorResponse(`Find nodes by class failed: ${response.error}`);
+      if (response.error) return createErrorResponse(`Find nodes by class failed: ${response.error}`);
       return { content: [{ type: 'text', text: JSON.stringify(response, null, 2) }] };
     } catch (error: any) {
-      return this.createErrorResponse(`Find nodes by class failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Find nodes by class failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
   private async handleGameReparentNode(args: any) {
-    if (!this.activeProcess) return this.createErrorResponse('No active Godot process. Use run_project first.');
-    if (!this.gameConnection.connected) return this.createErrorResponse('Not connected to game interaction server.');
+    if (!this.activeProcess) return createErrorResponse('No active Godot process. Use run_project first.');
+    if (!this.gameConnection.connected) return createErrorResponse('Not connected to game interaction server.');
 
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.nodePath || !args.newParentPath) {
-      return this.createErrorResponse('nodePath and newParentPath are required.');
+      return createErrorResponse('nodePath and newParentPath are required.');
     }
 
     try {
@@ -3906,38 +3750,38 @@ class GodotServer {
         new_parent_path: args.newParentPath,
         keep_global_transform: args.keepGlobalTransform !== false,
       });
-      if (response.error) return this.createErrorResponse(`Reparent node failed: ${response.error}`);
+      if (response.error) return createErrorResponse(`Reparent node failed: ${response.error}`);
       return { content: [{ type: 'text', text: JSON.stringify(response, null, 2) }] };
     } catch (error: any) {
-      return this.createErrorResponse(`Reparent node failed: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Reparent node failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
   // ==================== Headless Resource Handlers ====================
 
   private async handleAttachScript(args: any) {
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.projectPath || !args.scenePath || !args.nodePath || !args.scriptPath) {
-      return this.createErrorResponse('projectPath, scenePath, nodePath, and scriptPath are required.');
+      return createErrorResponse('projectPath, scenePath, nodePath, and scriptPath are required.');
     }
 
-    if (!this.validatePath(args.projectPath) || !this.validatePath(args.scenePath) || !this.validatePath(args.scriptPath)) {
-      return this.createErrorResponse('Invalid path.');
+    if (!validatePath(args.projectPath) || !validatePath(args.scenePath) || !validatePath(args.scriptPath)) {
+      return createErrorResponse('Invalid path.');
     }
 
     const projectFile = join(args.projectPath, 'project.godot');
     if (!existsSync(projectFile)) {
-      return this.createErrorResponse(`Not a valid Godot project: ${args.projectPath}`);
+      return createErrorResponse(`Not a valid Godot project: ${args.projectPath}`);
     }
 
     const scenePath = join(args.projectPath, args.scenePath);
     if (!existsSync(scenePath)) {
-      return this.createErrorResponse(`Scene file does not exist: ${args.scenePath}`);
+      return createErrorResponse(`Scene file does not exist: ${args.scenePath}`);
     }
 
     const scriptPath = join(args.projectPath, args.scriptPath);
     if (!existsSync(scriptPath)) {
-      return this.createErrorResponse(`Script file does not exist: ${args.scriptPath}`);
+      return createErrorResponse(`Script file does not exist: ${args.scriptPath}`);
     }
 
     try {
@@ -3948,30 +3792,30 @@ class GodotServer {
       }, args.projectPath);
 
       if (stderr && stderr.includes('Failed to')) {
-        return this.createErrorResponse(`Failed to attach script: ${stderr}`);
+        return createErrorResponse(`Failed to attach script: ${stderr}`);
       }
 
       return {
         content: [{ type: 'text', text: `Script attached successfully.\n\nOutput: ${stdout}` }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Failed to attach script: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Failed to attach script: ${error?.message || 'Unknown error'}`);
     }
   }
 
   private async handleCreateResource(args: any) {
-    args = this.normalizeParameters(args || {});
+    args = normalizeParameters(args || {});
     if (!args.projectPath || !args.resourceType || !args.resourcePath) {
-      return this.createErrorResponse('projectPath, resourceType, and resourcePath are required.');
+      return createErrorResponse('projectPath, resourceType, and resourcePath are required.');
     }
 
-    if (!this.validatePath(args.projectPath) || !this.validatePath(args.resourcePath)) {
-      return this.createErrorResponse('Invalid path.');
+    if (!validatePath(args.projectPath) || !validatePath(args.resourcePath)) {
+      return createErrorResponse('Invalid path.');
     }
 
     const projectFile = join(args.projectPath, 'project.godot');
     if (!existsSync(projectFile)) {
-      return this.createErrorResponse(`Not a valid Godot project: ${args.projectPath}`);
+      return createErrorResponse(`Not a valid Godot project: ${args.projectPath}`);
     }
 
     try {
@@ -3986,14 +3830,14 @@ class GodotServer {
       const { stdout, stderr } = await this.executeOperation('create_resource', params, args.projectPath);
 
       if (stderr && stderr.includes('Failed to')) {
-        return this.createErrorResponse(`Failed to create resource: ${stderr}`);
+        return createErrorResponse(`Failed to create resource: ${stderr}`);
       }
 
       return {
         content: [{ type: 'text', text: `Resource created successfully.\n\nOutput: ${stdout}` }],
       };
     } catch (error: any) {
-      return this.createErrorResponse(`Failed to create resource: ${error?.message || 'Unknown error'}`);
+      return createErrorResponse(`Failed to create resource: ${error?.message || 'Unknown error'}`);
     }
   }
 
@@ -4002,17 +3846,17 @@ class GodotServer {
    */
   private async handleUpdateProjectUids(args: any) {
     // Normalize parameters to camelCase
-    args = this.normalizeParameters(args);
+    args = normalizeParameters(args);
     
     if (!args.projectPath) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         'Project path is required',
         ['Provide a valid path to a Godot project directory']
       );
     }
 
-    if (!this.validatePath(args.projectPath)) {
-      return this.createErrorResponse(
+    if (!validatePath(args.projectPath)) {
+      return createErrorResponse(
         'Invalid project path',
         ['Provide a valid path without ".." or other potentially unsafe characters']
       );
@@ -4023,7 +3867,7 @@ class GodotServer {
       if (!this.godotPath) {
         await this.detectGodotPath();
         if (!this.godotPath) {
-          return this.createErrorResponse(
+          return createErrorResponse(
             'Could not find a valid Godot executable path',
             [
               'Ensure Godot is installed correctly',
@@ -4036,7 +3880,7 @@ class GodotServer {
       // Check if the project directory exists and contains a project.godot file
       const projectFile = join(args.projectPath, 'project.godot');
       if (!existsSync(projectFile)) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Not a valid Godot project: ${args.projectPath}`,
           [
             'Ensure the path points to a directory containing a project.godot file',
@@ -4049,8 +3893,8 @@ class GodotServer {
       const { stdout: versionOutput } = await execFileAsync(this.godotPath!, ['--version']);
       const version = versionOutput.trim();
 
-      if (!this.isGodot44OrLater(version)) {
-        return this.createErrorResponse(
+      if (!isGodot44OrLater(version)) {
+        return createErrorResponse(
           `UIDs are only supported in Godot 4.4 or later. Current version: ${version}`,
           [
             'Upgrade to Godot 4.4 or later to use UIDs',
@@ -4068,7 +3912,7 @@ class GodotServer {
       const { stdout, stderr } = await this.executeOperation('resave_resources', params, args.projectPath);
 
       if (stderr && stderr.includes('Failed to')) {
-        return this.createErrorResponse(
+        return createErrorResponse(
           `Failed to update project UIDs: ${stderr}`,
           [
             'Check if the project is valid',
@@ -4086,7 +3930,7 @@ class GodotServer {
         ],
       };
     } catch (error: any) {
-      return this.createErrorResponse(
+      return createErrorResponse(
         `Failed to update project UIDs: ${error?.message || 'Unknown error'}`,
         [
           'Ensure Godot is installed correctly',
