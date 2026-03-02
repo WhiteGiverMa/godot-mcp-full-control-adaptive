@@ -249,6 +249,31 @@ The server uses two communication channels:
 
 2. **TCP Socket** - For runtime interaction with a running game. The `mcp_interaction_server.gd` autoload listens on port 9090 and processes JSON commands sent by the TypeScript MCP server.
 
+### Source layout
+
+| Path | Description |
+|------|-------------|
+| `src/index.ts` | MCP server, tool definitions, and all handlers |
+| `src/utils.ts` | Pure utility functions (parameter mapping, validation, error helpers) |
+| `src/scripts/godot_operations.gd` | Headless GDScript operations runner |
+| `src/scripts/mcp_interaction_server.gd` | TCP interaction server autoload |
+| `tests/` | Vitest test suite |
+
+## Testing
+
+The project uses [Vitest](https://vitest.dev/) with 191 tests across 3 files:
+
+| File | Tests | What it covers |
+|------|-------|----------------|
+| `tests/utils.test.ts` | 30 | Parameter mappings, normalization, path validation, error responses, version detection |
+| `tests/tool-definitions.test.ts` | 55 | All 47 tools defined, schemas valid, names unique, descriptions < 80 chars |
+| `tests/handlers.test.ts` | 106 | Game command arg transforms, required-param validation, headless op path checks, source structure |
+
+```bash
+npm test          # run once
+npm run test:watch  # watch mode
+```
+
 ## Example Prompts
 
 ```text
