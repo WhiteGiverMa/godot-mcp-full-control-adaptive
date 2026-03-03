@@ -1699,6 +1699,178 @@ describe('Game command handlers — new tools (group, timer, particles, animatio
 });
 
 // ---------------------------------------------------------------------------
+// 7f. Visual Shader + Terrain + Video + CI/CD handlers
+// ---------------------------------------------------------------------------
+describe('Game command handlers — visual shader, terrain, video, CI/CD', () => {
+  // game_visual_shader
+  describe('handleGameVisualShader', () => {
+    const argsFn = (a: any) => ({
+      action: a.action,
+      ...(a.nodePath ? { node_path: a.nodePath } : {}),
+      ...(a.shaderType ? { shader_type: a.shaderType } : {}),
+      ...(a.nodeClass ? { node_class: a.nodeClass } : {}),
+      ...(a.position ? { position: a.position } : {}),
+      ...(a.fromNode !== undefined ? { from_node: a.fromNode } : {}),
+      ...(a.fromPort !== undefined ? { from_port: a.fromPort } : {}),
+      ...(a.toNode !== undefined ? { to_node: a.toNode } : {}),
+      ...(a.toPort !== undefined ? { to_port: a.toPort } : {}),
+      ...(a.shaderId !== undefined ? { shader_id: a.shaderId } : {}),
+    });
+
+    it('sends create action with shader type', () => {
+      const r = fakeGameCommand(true, true, { action: 'create', shaderType: 'spatial' }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'create', shader_type: 'spatial' });
+    });
+
+    it('sends add_node with class and position', () => {
+      const r = fakeGameCommand(true, true, { action: 'add_node', nodeClass: 'VisualShaderNodeColorConstant', position: { x: 100, y: 200 } }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'add_node', node_class: 'VisualShaderNodeColorConstant', position: { x: 100, y: 200 } });
+    });
+
+    it('sends connect with port info', () => {
+      const r = fakeGameCommand(true, true, { action: 'connect', fromNode: 1, fromPort: 0, toNode: 0, toPort: 0 }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'connect', from_node: 1, from_port: 0, to_node: 0, to_port: 0 });
+    });
+
+    it('sends apply with node path', () => {
+      const r = fakeGameCommand(true, true, { action: 'apply', nodePath: '/root/Mesh' }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'apply', node_path: '/root/Mesh' });
+    });
+
+    it('returns error when no active process', () => {
+      const r = fakeGameCommand(false, true, { action: 'create' }, argsFn);
+      expect(r.error).toContain('No active Godot process');
+    });
+  });
+
+  // game_terrain
+  describe('handleGameTerrain', () => {
+    const argsFn = (a: any) => ({
+      action: a.action,
+      ...(a.parentPath ? { parent_path: a.parentPath } : {}),
+      ...(a.nodePath ? { node_path: a.nodePath } : {}),
+      ...(a.heightData ? { height_data: a.heightData } : {}),
+      ...(a.width !== undefined ? { width: a.width } : {}),
+      ...(a.depth !== undefined ? { depth: a.depth } : {}),
+      ...(a.maxHeight !== undefined ? { max_height: a.maxHeight } : {}),
+      ...(a.x !== undefined ? { x: a.x } : {}),
+      ...(a.z !== undefined ? { z: a.z } : {}),
+      ...(a.radius !== undefined ? { radius: a.radius } : {}),
+      ...(a.heightDelta !== undefined ? { height_delta: a.heightDelta } : {}),
+      ...(a.color ? { color: a.color } : {}),
+      ...(a.name ? { name: a.name } : {}),
+    });
+
+    it('sends create action with height data', () => {
+      const r = fakeGameCommand(true, true, { action: 'create', parentPath: '/root', heightData: [0, 1, 2, 3], width: 2, depth: 2, maxHeight: 10 }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'create', parent_path: '/root', height_data: [0, 1, 2, 3], width: 2, depth: 2, max_height: 10 });
+    });
+
+    it('sends modify action with region params', () => {
+      const r = fakeGameCommand(true, true, { action: 'modify', nodePath: '/root/Terrain', x: 5, z: 10, radius: 3, heightDelta: 2.5 }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'modify', node_path: '/root/Terrain', x: 5, z: 10, radius: 3, height_delta: 2.5 });
+    });
+
+    it('sends paint action with color', () => {
+      const r = fakeGameCommand(true, true, { action: 'paint', nodePath: '/root/Terrain', x: 0, z: 0, radius: 1, color: { r: 1, g: 0, b: 0, a: 1 } }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'paint', node_path: '/root/Terrain', x: 0, z: 0, radius: 1, color: { r: 1, g: 0, b: 0, a: 1 } });
+    });
+
+    it('sends get_height action', () => {
+      const r = fakeGameCommand(true, true, { action: 'get_height', nodePath: '/root/Terrain', x: 3, z: 7 }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'get_height', node_path: '/root/Terrain', x: 3, z: 7 });
+    });
+  });
+
+  // game_video
+  describe('handleGameVideo', () => {
+    const argsFn = (a: any) => ({
+      action: a.action,
+      ...(a.nodePath ? { node_path: a.nodePath } : {}),
+      ...(a.parentPath ? { parent_path: a.parentPath } : {}),
+      ...(a.videoPath ? { video_path: a.videoPath } : {}),
+      ...(a.position !== undefined ? { position: a.position } : {}),
+      ...(a.volume !== undefined ? { volume: a.volume } : {}),
+      ...(a.loop !== undefined ? { loop: a.loop } : {}),
+      ...(a.autoplay !== undefined ? { autoplay: a.autoplay } : {}),
+      ...(a.name ? { name: a.name } : {}),
+    });
+
+    it('sends play action with node path and video', () => {
+      const r = fakeGameCommand(true, true, { action: 'play', nodePath: '/root/VideoPlayer', videoPath: 'res://intro.ogv' }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'play', node_path: '/root/VideoPlayer', video_path: 'res://intro.ogv' });
+    });
+
+    it('sends create action with properties', () => {
+      const r = fakeGameCommand(true, true, { action: 'create', parentPath: '/root', videoPath: 'res://vid.ogv', autoplay: true, loop: false, name: 'Player' }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'create', parent_path: '/root', video_path: 'res://vid.ogv', autoplay: true, loop: false, name: 'Player' });
+    });
+
+    it('sends seek action with position', () => {
+      const r = fakeGameCommand(true, true, { action: 'seek', nodePath: '/root/VideoPlayer', position: 30.5 }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'seek', node_path: '/root/VideoPlayer', position: 30.5 });
+    });
+
+    it('sends pause action', () => {
+      const r = fakeGameCommand(true, true, { action: 'pause', nodePath: '/root/VideoPlayer' }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'pause', node_path: '/root/VideoPlayer' });
+    });
+
+    it('sends get_status action', () => {
+      const r = fakeGameCommand(true, true, { action: 'get_status', nodePath: '/root/VideoPlayer' }, argsFn);
+      expect(r.commandArgs).toEqual({ action: 'get_status', node_path: '/root/VideoPlayer' });
+    });
+
+    it('returns error when not connected', () => {
+      const r = fakeGameCommand(true, false, { action: 'play' }, argsFn);
+      expect(r.error).toContain('Not connected');
+    });
+  });
+
+  // manage_ci_pipeline
+  describe('handleManageCiPipeline', () => {
+    it('source contains handleManageCiPipeline', () => {
+      expect(sourceCode).toContain('handleManageCiPipeline');
+    });
+
+    it('validates projectPath and action', () => {
+      expect(sourceCode).toContain("'projectPath and action are required.'");
+    });
+
+    it('creates workflow in .github/workflows directory', () => {
+      expect(sourceCode).toContain('.github');
+      expect(sourceCode).toContain('godot-export.yml');
+    });
+
+    it('requires valid project path for CI pipeline', () => {
+      const argsFn = (a: any) => ({ projectPath: a.projectPath, params: { action: a.action } });
+      const r = fakeHeadlessOp({ projectPath: '', action: 'create' }, argsFn);
+      expect(r.error).toContain('projectPath is required');
+    });
+  });
+
+  // manage_docker_export
+  describe('handleManageDockerExport', () => {
+    it('source contains handleManageDockerExport', () => {
+      expect(sourceCode).toContain('handleManageDockerExport');
+    });
+
+    it('creates Dockerfile in project root', () => {
+      expect(sourceCode).toContain('Dockerfile');
+    });
+
+    it('supports custom base image', () => {
+      expect(sourceCode).toContain('baseImage');
+      expect(sourceCode).toContain('ubuntu:22.04');
+    });
+
+    it('supports export preset configuration', () => {
+      expect(sourceCode).toContain('exportPreset');
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 8. createErrorResponse in handlers
 // ---------------------------------------------------------------------------
 describe('Error response format in handlers', () => {
@@ -1760,8 +1932,8 @@ describe('Tool dispatch switch statement', () => {
   it('every case returns await this.handle*', () => {
     const caseRegex = /case '(\w+)':\s*\n\s*return await this\.handle/g;
     const matches = [...sourceCode.matchAll(caseRegex)];
-    // Should match all 149 tools
-    expect(matches.length).toBe(149);
+    // Should match all 154 tools
+    expect(matches.length).toBe(154);
   });
 
   it('no case falls through without return', () => {

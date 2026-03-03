@@ -60,6 +60,8 @@ const ALL_TOOL_NAMES = [
   'game_ui_control', 'game_ui_text', 'game_ui_popup', 'game_ui_tree',
   'game_ui_item_list', 'game_ui_tabs', 'game_ui_menu', 'game_ui_range',
   'game_render_settings', 'game_resource',
+  // Batch 6: Visual Shader + Terrain + Video + CI/CD
+  'game_visual_shader', 'game_terrain', 'game_video', 'manage_ci_pipeline', 'manage_docker_export',
 ];
 
 let sourceCode: string;
@@ -69,8 +71,8 @@ beforeAll(() => {
 });
 
 describe('Tool definitions', () => {
-  it('defines exactly 149 tools', () => {
-    expect(ALL_TOOL_NAMES).toHaveLength(149);
+  it('defines exactly 154 tools', () => {
+    expect(ALL_TOOL_NAMES).toHaveLength(154);
   });
 
   it('all tool names are unique', () => {

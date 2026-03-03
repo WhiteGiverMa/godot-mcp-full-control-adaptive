@@ -3096,6 +3096,98 @@ class GodotServer {
             required: ['action', 'path'],
           },
         },
+        // Batch 6: Visual Shader + Terrain + Video + CI/CD
+        {
+          name: 'game_visual_shader',
+          description: 'Create and edit VisualShader graphs: add/connect/disconnect nodes',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              action: { type: 'string', description: 'Action: create, add_node, connect, disconnect, get_nodes, apply' },
+              nodePath: { type: 'string', description: 'Target node path (for apply)' },
+              shaderType: { type: 'string', description: 'Shader type: spatial, canvas_item, particles, sky, fog' },
+              nodeClass: { type: 'string', description: 'VisualShaderNode class name (for add_node)' },
+              position: { type: 'object', description: 'Node position {x, y} (for add_node)' },
+              fromNode: { type: 'number', description: 'Source node ID (for connect/disconnect)' },
+              fromPort: { type: 'number', description: 'Source port index' },
+              toNode: { type: 'number', description: 'Destination node ID (for connect/disconnect)' },
+              toPort: { type: 'number', description: 'Destination port index' },
+              shaderId: { type: 'number', description: 'Shader resource ID (for multi-shader scenes)' },
+            },
+            required: ['action'],
+          },
+        },
+        {
+          name: 'game_terrain',
+          description: 'Create/modify terrain meshes from heightmap data',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              action: { type: 'string', description: 'Action: create, modify, get_height, paint' },
+              parentPath: { type: 'string', description: 'Parent node path' },
+              nodePath: { type: 'string', description: 'Terrain node path' },
+              heightData: { type: 'array', description: 'Array of float height values (for create)', items: { type: 'number' } },
+              width: { type: 'number', description: 'Terrain width in vertices' },
+              depth: { type: 'number', description: 'Terrain depth in vertices' },
+              maxHeight: { type: 'number', description: 'Maximum terrain height' },
+              x: { type: 'number', description: 'X position (for modify/get_height/paint)' },
+              z: { type: 'number', description: 'Z position (for modify/get_height/paint)' },
+              radius: { type: 'number', description: 'Brush radius (for modify/paint)' },
+              heightDelta: { type: 'number', description: 'Height change amount (for modify)' },
+              color: { type: 'object', description: 'Vertex color {r,g,b,a} (for paint)' },
+              name: { type: 'string', description: 'Node name' },
+            },
+            required: ['action'],
+          },
+        },
+        {
+          name: 'game_video',
+          description: 'Video playback control: play, pause, stop, seek on VideoStreamPlayer',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              action: { type: 'string', description: 'Action: create, play, pause, stop, seek, get_status' },
+              nodePath: { type: 'string', description: 'Path to VideoStreamPlayer node' },
+              parentPath: { type: 'string', description: 'Parent node path (for create)' },
+              videoPath: { type: 'string', description: 'res:// path to video file' },
+              position: { type: 'number', description: 'Seek position in seconds' },
+              volume: { type: 'number', description: 'Volume (linear 0-1)' },
+              loop: { type: 'boolean', description: 'Enable looping' },
+              autoplay: { type: 'boolean', description: 'Auto-play on ready' },
+              name: { type: 'string', description: 'Node name (for create)' },
+            },
+            required: ['action'],
+          },
+        },
+        {
+          name: 'manage_ci_pipeline',
+          description: 'Create/read GitHub Actions workflow for automated Godot exports',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              projectPath: { type: 'string', description: 'Absolute path to Godot project' },
+              action: { type: 'string', description: 'Action: create or read' },
+              platforms: { type: 'array', description: 'Target platforms: windows, linux, macos, web', items: { type: 'string' } },
+              godotVersion: { type: 'string', description: 'Godot version (e.g. 4.3-stable)' },
+            },
+            required: ['projectPath', 'action'],
+          },
+        },
+        {
+          name: 'manage_docker_export',
+          description: 'Create Dockerfile for headless Godot export',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              projectPath: { type: 'string', description: 'Absolute path to Godot project' },
+              action: { type: 'string', description: 'Action: create or read' },
+              godotVersion: { type: 'string', description: 'Godot version (e.g. 4.3-stable)' },
+              exportPreset: { type: 'string', description: 'Export preset name' },
+              baseImage: { type: 'string', description: 'Base Docker image (default: ubuntu:22.04)' },
+            },
+            required: ['projectPath', 'action'],
+          },
+        },
       ],
     }));
 
@@ -3418,6 +3510,17 @@ class GodotServer {
           return await this.handleGameRenderSettings(request.params.arguments);
         case 'game_resource':
           return await this.handleGameResource(request.params.arguments);
+        // Batch 6: Visual Shader + Terrain + Video + CI/CD
+        case 'game_visual_shader':
+          return await this.handleGameVisualShader(request.params.arguments);
+        case 'game_terrain':
+          return await this.handleGameTerrain(request.params.arguments);
+        case 'game_video':
+          return await this.handleGameVideo(request.params.arguments);
+        case 'manage_ci_pipeline':
+          return await this.handleManageCiPipeline(request.params.arguments);
+        case 'manage_docker_export':
+          return await this.handleManageDockerExport(request.params.arguments);
         default:
           throw new McpError(
             ErrorCode.MethodNotFound,
@@ -6345,6 +6448,114 @@ class GodotServer {
       ...(a.nodePath ? { node_path: a.nodePath } : {}),
       ...(a.property ? { property: a.property } : {}),
     }));
+  }
+
+  // --- Batch 6: Visual Shader + Terrain + Video + CI/CD ---
+  private async handleGameVisualShader(args: any) {
+    args = normalizeParameters(args || {});
+    if (!args.action) return createErrorResponse('action is required.');
+    return this.gameCommand('visual_shader', args, a => ({
+      action: a.action,
+      ...(a.nodePath ? { node_path: a.nodePath } : {}),
+      ...(a.shaderType ? { shader_type: a.shaderType } : {}),
+      ...(a.nodeClass ? { node_class: a.nodeClass } : {}),
+      ...(a.position ? { position: a.position } : {}),
+      ...(a.fromNode !== undefined ? { from_node: a.fromNode } : {}),
+      ...(a.fromPort !== undefined ? { from_port: a.fromPort } : {}),
+      ...(a.toNode !== undefined ? { to_node: a.toNode } : {}),
+      ...(a.toPort !== undefined ? { to_port: a.toPort } : {}),
+      ...(a.shaderId !== undefined ? { shader_id: a.shaderId } : {}),
+    }));
+  }
+
+  private async handleGameTerrain(args: any) {
+    args = normalizeParameters(args || {});
+    if (!args.action) return createErrorResponse('action is required.');
+    return this.gameCommand('terrain', args, a => ({
+      action: a.action,
+      ...(a.parentPath ? { parent_path: a.parentPath } : {}),
+      ...(a.nodePath ? { node_path: a.nodePath } : {}),
+      ...(a.heightData ? { height_data: a.heightData } : {}),
+      ...(a.width !== undefined ? { width: a.width } : {}),
+      ...(a.depth !== undefined ? { depth: a.depth } : {}),
+      ...(a.maxHeight !== undefined ? { max_height: a.maxHeight } : {}),
+      ...(a.x !== undefined ? { x: a.x } : {}),
+      ...(a.z !== undefined ? { z: a.z } : {}),
+      ...(a.radius !== undefined ? { radius: a.radius } : {}),
+      ...(a.heightDelta !== undefined ? { height_delta: a.heightDelta } : {}),
+      ...(a.color ? { color: a.color } : {}),
+      ...(a.name ? { name: a.name } : {}),
+    }));
+  }
+
+  private async handleGameVideo(args: any) {
+    args = normalizeParameters(args || {});
+    if (!args.action) return createErrorResponse('action is required.');
+    return this.gameCommand('video', args, a => ({
+      action: a.action,
+      ...(a.nodePath ? { node_path: a.nodePath } : {}),
+      ...(a.parentPath ? { parent_path: a.parentPath } : {}),
+      ...(a.videoPath ? { video_path: a.videoPath } : {}),
+      ...(a.position !== undefined ? { position: a.position } : {}),
+      ...(a.volume !== undefined ? { volume: a.volume } : {}),
+      ...(a.loop !== undefined ? { loop: a.loop } : {}),
+      ...(a.autoplay !== undefined ? { autoplay: a.autoplay } : {}),
+      ...(a.name ? { name: a.name } : {}),
+    }));
+  }
+
+  private async handleManageCiPipeline(args: any) {
+    args = normalizeParameters(args || {});
+    if (!args.projectPath || !args.action) return createErrorResponse('projectPath and action are required.');
+    if (!validatePath(args.projectPath)) return createErrorResponse('Invalid path.');
+    const projectFile = join(args.projectPath, 'project.godot');
+    if (!existsSync(projectFile)) return createErrorResponse(`Not a valid Godot project: ${args.projectPath}`);
+    const workflowDir = join(args.projectPath, '.github', 'workflows');
+    const workflowPath = join(workflowDir, 'godot-export.yml');
+    try {
+      if (args.action === 'read') {
+        if (!existsSync(workflowPath)) return createErrorResponse('No workflow file found at .github/workflows/godot-export.yml');
+        const content = readFileSync(workflowPath, 'utf8');
+        return { content: [{ type: 'text', text: content }] };
+      } else if (args.action === 'create') {
+        if (!existsSync(workflowDir)) mkdirSync(workflowDir, { recursive: true });
+        const godotVersion = args.godotVersion || '4.3-stable';
+        const platforms = args.platforms || ['linux'];
+        const exportSteps = platforms.map((p: string) => `      - name: Export ${p}\n        run: godot --headless --export-release "${p}" build/${p}/game`).join('\n');
+        const workflow = `name: Godot Export\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\njobs:\n  export:\n    runs-on: ubuntu-latest\n    container:\n      image: barichello/godot-ci:${godotVersion}\n    steps:\n      - uses: actions/checkout@v4\n      - name: Setup export templates\n        run: |\n          mkdir -p ~/.local/share/godot/export_templates/${godotVersion}\n          mv /root/.local/share/godot/export_templates/${godotVersion}/* ~/.local/share/godot/export_templates/${godotVersion}/ || true\n${exportSteps}\n      - uses: actions/upload-artifact@v4\n        with:\n          name: game-builds\n          path: build/\n`;
+        writeFileSync(workflowPath, workflow, 'utf8');
+        return { content: [{ type: 'text', text: `CI pipeline created at .github/workflows/godot-export.yml for platforms: ${platforms.join(', ')}` }] };
+      }
+      return createErrorResponse(`Unknown action: ${args.action}`);
+    } catch (error: any) {
+      return createErrorResponse(`manage_ci_pipeline failed: ${error?.message || 'Unknown error'}`);
+    }
+  }
+
+  private async handleManageDockerExport(args: any) {
+    args = normalizeParameters(args || {});
+    if (!args.projectPath || !args.action) return createErrorResponse('projectPath and action are required.');
+    if (!validatePath(args.projectPath)) return createErrorResponse('Invalid path.');
+    const projectFile = join(args.projectPath, 'project.godot');
+    if (!existsSync(projectFile)) return createErrorResponse(`Not a valid Godot project: ${args.projectPath}`);
+    const dockerfilePath = join(args.projectPath, 'Dockerfile');
+    try {
+      if (args.action === 'read') {
+        if (!existsSync(dockerfilePath)) return createErrorResponse('No Dockerfile found in project root.');
+        const content = readFileSync(dockerfilePath, 'utf8');
+        return { content: [{ type: 'text', text: content }] };
+      } else if (args.action === 'create') {
+        const godotVersion = args.godotVersion || '4.3-stable';
+        const baseImage = args.baseImage || 'ubuntu:22.04';
+        const exportPreset = args.exportPreset || 'Linux/X11';
+        const dockerfile = `FROM ${baseImage}\n\nARG GODOT_VERSION=${godotVersion}\n\nRUN apt-get update && apt-get install -y \\\n    wget unzip ca-certificates \\\n    && rm -rf /var/lib/apt/lists/*\n\nRUN wget -q https://github.com/godotengine/godot/releases/download/\${GODOT_VERSION}/Godot_v\${GODOT_VERSION}_linux.x86_64.zip \\\n    && unzip Godot_v\${GODOT_VERSION}_linux.x86_64.zip \\\n    && mv Godot_v\${GODOT_VERSION}_linux.x86_64 /usr/local/bin/godot \\\n    && rm Godot_v\${GODOT_VERSION}_linux.x86_64.zip\n\nRUN wget -q https://github.com/godotengine/godot/releases/download/\${GODOT_VERSION}/Godot_v\${GODOT_VERSION}_export_templates.tpz \\\n    && mkdir -p /root/.local/share/godot/export_templates/\${GODOT_VERSION} \\\n    && unzip Godot_v\${GODOT_VERSION}_export_templates.tpz \\\n    && mv templates/* /root/.local/share/godot/export_templates/\${GODOT_VERSION}/ \\\n    && rm -rf templates Godot_v\${GODOT_VERSION}_export_templates.tpz\n\nWORKDIR /game\nCOPY . .\n\nRUN mkdir -p build\nCMD ["godot", "--headless", "--export-release", "${exportPreset}", "build/game"]\n`;
+        writeFileSync(dockerfilePath, dockerfile, 'utf8');
+        return { content: [{ type: 'text', text: `Dockerfile created for headless Godot export (preset: ${exportPreset})` }] };
+      }
+      return createErrorResponse(`Unknown action: ${args.action}`);
+    } catch (error: any) {
+      return createErrorResponse(`manage_docker_export failed: ${error?.message || 'Unknown error'}`);
+    }
   }
 
   /**
