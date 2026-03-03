@@ -1,7 +1,7 @@
 {
   "name": "godot-mcp",
   "version": "1.0.0",
-  "description": "Full-control MCP server for Godot Engine. 47 tools: runtime eval, property inspection, scene manipulation, animation, signals, tweens, project management and more.",
+  "description": "MCP server for full Godot 4.x engine control — 149 tools for AI-driven game development",
   "keywords": [
     "godot",
     "mcp",
