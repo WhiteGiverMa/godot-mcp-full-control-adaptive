@@ -562,6 +562,11 @@ The server uses two communication channels:
 | `src/scripts/mcp_interaction_server.gd` | TCP interaction server autoload |
 | `tests/` | Vitest test suite |
 
+## Maintenance
+
+- Upstream sync workflow: `docs/upstream-sync.md`
+- For Godot projects that keep local plugin metadata or project-specific MCP docs, prefer vendoring `build/scripts/*.gd` instead of replacing the whole addon directory.
+
 ## Testing
 
 The project uses [Vitest](https://vitest.dev/) with 390 tests across 3 files:
