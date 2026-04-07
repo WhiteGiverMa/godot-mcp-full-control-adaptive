@@ -73,6 +73,7 @@ The original godot-mcp provided 20 tools for basic project management and scene 
 - **`game_scroll`** - Mouse scroll wheel events
 - **`game_mouse_drag`** - Drag between two points over multiple frames
 - **`game_gamepad`** - Gamepad button and axis input events
+- **GUIDE-aware action injection** - When a project uses the G.U.I.D.E addon, action-based key hold/release now resolve the active GUIDE binding and inject the underlying raw device event so GUIDE actions respond correctly.
 
 ### Project Creation & Configuration
 - **`create_project`** - Create a new Godot project from scratch
@@ -525,6 +526,16 @@ To use the `game_*` runtime tools, your Godot project needs the MCP interaction 
 3. Add the script with the name `McpInteractionServer`
 
 The server listens on `127.0.0.1:9090` and accepts JSON commands over TCP when the game is running.
+
+### GUIDE compatibility note
+
+If your Godot project uses [G.U.I.D.E](https://github.com/godotneers/G.U.I.D.E) for input handling, this fork improves runtime action injection:
+
+- `key="D"` style input continues to inject a raw keyboard event directly.
+- `action="jump"` style input will first try to resolve the currently enabled GUIDE action binding and inject the matching raw key / mouse button / joy button event.
+- If no GUIDE binding is active for that action, the server falls back to Godot's built-in `Input.action_press()` / `Input.action_release()` behavior.
+
+This is especially useful for automation against projects that wrap input through GUIDE instead of consuming only Godot `InputMap` actions.
 
 ## Environment Variables
 
