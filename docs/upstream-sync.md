@@ -97,6 +97,12 @@ Copy-Item "G:\dev\godot-mcp-fc-a\build\scripts\godot_operations.gd" "<project>\a
 Copy-Item "G:\dev\godot-mcp-fc-a\build\scripts\mcp_interaction_server.gd" "<project>\addons\godot_mcp\mcp_interaction_server.gd" -Force
 ```
 
+Or use the helper script in this repository:
+
+```powershell
+.\scripts\sync-downstream.ps1
+```
+
 Then verify hashes or diffs, and run the target project once.
 
 ## Push flow
