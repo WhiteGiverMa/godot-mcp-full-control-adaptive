@@ -2,11 +2,14 @@ import { describe, it, expect } from 'vitest';
 import {
   PARAMETER_MAPPINGS,
   REVERSE_PARAMETER_MAPPINGS,
+  DEFAULT_INTERACTION_SERVER_CONFIG,
   normalizeParameters,
   convertCamelToSnakeCase,
   validatePath,
   createErrorResponse,
   isGodot44OrLater,
+  parseInteractionServerConfig,
+  getInteractionPortCandidates,
 } from '../src/utils.js';
 
 describe('PARAMETER_MAPPINGS', () => {
@@ -223,5 +226,53 @@ describe('isGodot44OrLater', () => {
   it('handles version strings with extra info', () => {
     expect(isGodot44OrLater('4.4.1.stable')).toBe(true);
     expect(isGodot44OrLater('4.3.2.rc1')).toBe(false);
+  });
+});
+
+describe('interaction server config helpers', () => {
+  it('returns defaults for invalid config payloads', () => {
+    expect(parseInteractionServerConfig(null)).toEqual(DEFAULT_INTERACTION_SERVER_CONFIG);
+    expect(parseInteractionServerConfig('bad')).toEqual(DEFAULT_INTERACTION_SERVER_CONFIG);
+  });
+
+  it('parses snake_case config keys', () => {
+    expect(parseInteractionServerConfig({
+      host: '127.0.0.1',
+      port: 9090,
+      allow_port_fallback: true,
+      max_port_tries: 4,
+    })).toEqual({
+      host: '127.0.0.1',
+      port: 9090,
+      allowPortFallback: true,
+      maxPortTries: 4,
+    });
+  });
+
+  it('builds a single port candidate when fallback is disabled', () => {
+    expect(getInteractionPortCandidates({
+      host: '127.0.0.1',
+      port: 9090,
+      allowPortFallback: false,
+      maxPortTries: 20,
+    })).toEqual([9090]);
+  });
+
+  it('builds a nearby port range when fallback is enabled', () => {
+    expect(getInteractionPortCandidates({
+      host: '127.0.0.1',
+      port: 9090,
+      allowPortFallback: true,
+      maxPortTries: 4,
+    })).toEqual([9090, 9091, 9092, 9093]);
+  });
+
+  it('stops at the valid TCP port ceiling', () => {
+    expect(getInteractionPortCandidates({
+      host: '127.0.0.1',
+      port: 65534,
+      allowPortFallback: true,
+      maxPortTries: 4,
+    })).toEqual([65534, 65535]);
   });
 });

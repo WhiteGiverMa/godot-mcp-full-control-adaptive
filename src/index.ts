@@ -24,13 +24,13 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 import {
-  PARAMETER_MAPPINGS,
-  REVERSE_PARAMETER_MAPPINGS,
   normalizeParameters,
   convertCamelToSnakeCase,
   validatePath,
   createErrorResponse,
   isGodot44OrLater,
+  getInteractionPortCandidates,
+  loadInteractionServerConfig,
   type OperationParams,
 } from './utils.js';
 
@@ -69,6 +69,7 @@ interface GodotServerConfig {
 interface GameConnection {
   socket: Socket | null;
   connected: boolean;
+  port: number | null;
   responseBuffer: string;
   pendingResolve: ((value: any) => void) | null;
   projectPath: string | null;
@@ -88,13 +89,13 @@ class GodotServer {
   private gameConnection: GameConnection = {
     socket: null,
     connected: false,
+    port: null,
     responseBuffer: '',
     pendingResolve: null,
     projectPath: null,
   };
   private lastErrorIndex: number = 0;
   private lastLogIndex: number = 0;
-  private readonly INTERACTION_PORT = 9090;
   private readonly AUTOLOAD_NAME = 'McpInteractionServer';
 
   constructor(config?: GodotServerConfig) {
@@ -403,6 +404,8 @@ class GodotServer {
    */
   private async connectToGame(projectPath: string): Promise<void> {
     this.gameConnection.projectPath = projectPath;
+    const interactionConfig = loadInteractionServerConfig(projectPath);
+    const candidatePorts = getInteractionPortCandidates(interactionConfig);
 
     // Initial delay to let the game start up
     await new Promise(resolve => setTimeout(resolve, 2000));
@@ -417,65 +420,78 @@ class GodotServer {
       }
 
       try {
-        await new Promise<void>((resolve, reject) => {
-          const socket = createConnection({ host: '127.0.0.1', port: this.INTERACTION_PORT }, () => {
-            this.gameConnection.socket = socket;
-            this.gameConnection.connected = true;
-            this.gameConnection.responseBuffer = '';
-            this.logDebug(`Connected to game interaction server (attempt ${attempt})`);
-            console.error(`[SERVER] Connected to game interaction server on port ${this.INTERACTION_PORT}`);
+        for (const candidatePort of candidatePorts) {
+          try {
+            await new Promise<void>((resolve, reject) => {
+              const socket = createConnection({ host: interactionConfig.host, port: candidatePort }, () => {
+                this.gameConnection.socket = socket;
+                this.gameConnection.connected = true;
+                this.gameConnection.port = candidatePort;
+                this.gameConnection.responseBuffer = '';
+                this.logDebug(`Connected to game interaction server on ${interactionConfig.host}:${candidatePort} (attempt ${attempt})`);
+                console.error(`[SERVER] Connected to game interaction server on ${interactionConfig.host}:${candidatePort}`);
 
-            socket.on('data', (data: Buffer) => {
-              this.gameConnection.responseBuffer += data.toString();
-              // Process complete lines
-              while (this.gameConnection.responseBuffer.includes('\n')) {
-                const newlinePos = this.gameConnection.responseBuffer.indexOf('\n');
-                const line = this.gameConnection.responseBuffer.substring(0, newlinePos).trim();
-                this.gameConnection.responseBuffer = this.gameConnection.responseBuffer.substring(newlinePos + 1);
-                if (line.length > 0 && this.gameConnection.pendingResolve) {
-                  try {
-                    const parsed = JSON.parse(line);
-                    const resolver = this.gameConnection.pendingResolve;
-                    this.gameConnection.pendingResolve = null;
-                    resolver(parsed);
-                  } catch (e) {
-                    this.logDebug(`Failed to parse game response: ${line}`);
+                socket.on('data', (data: Buffer) => {
+                  this.gameConnection.responseBuffer += data.toString();
+                  // Process complete lines
+                  while (this.gameConnection.responseBuffer.includes('\n')) {
+                    const newlinePos = this.gameConnection.responseBuffer.indexOf('\n');
+                    const line = this.gameConnection.responseBuffer.substring(0, newlinePos).trim();
+                    this.gameConnection.responseBuffer = this.gameConnection.responseBuffer.substring(newlinePos + 1);
+                    if (line.length > 0 && this.gameConnection.pendingResolve) {
+                      try {
+                        const parsed = JSON.parse(line);
+                        const resolver = this.gameConnection.pendingResolve;
+                        this.gameConnection.pendingResolve = null;
+                        resolver(parsed);
+                      } catch {
+                        this.logDebug(`Failed to parse game response: ${line}`);
+                      }
+                    }
                   }
-                }
-              }
+                });
+
+                socket.on('close', () => {
+                  this.logDebug('Game interaction connection closed');
+                  this.gameConnection.connected = false;
+                  this.gameConnection.socket = null;
+                  this.gameConnection.port = null;
+                  if (this.gameConnection.pendingResolve) {
+                    this.gameConnection.pendingResolve({ error: 'Connection closed' });
+                    this.gameConnection.pendingResolve = null;
+                  }
+                });
+
+                socket.on('error', (err: Error) => {
+                  this.logDebug(`Game interaction socket error on ${interactionConfig.host}:${candidatePort}: ${err.message}`);
+                });
+
+                resolve();
+              });
+
+              socket.on('error', (err: Error) => {
+                socket.destroy();
+                reject(err);
+              });
             });
 
-            socket.on('close', () => {
-              this.logDebug('Game interaction connection closed');
-              this.gameConnection.connected = false;
-              this.gameConnection.socket = null;
-              if (this.gameConnection.pendingResolve) {
-                this.gameConnection.pendingResolve({ error: 'Connection closed' });
-                this.gameConnection.pendingResolve = null;
-              }
-            });
+            return;
+          } catch (err) {
+            this.logDebug(`Connection attempt ${attempt} failed on ${interactionConfig.host}:${candidatePort}: ${err}`);
+          }
+        }
 
-            socket.on('error', (err: Error) => {
-              this.logDebug(`Game interaction socket error: ${err.message}`);
-            });
-
-            resolve();
-          });
-
-          socket.on('error', (err: Error) => {
-            reject(err);
-          });
-        });
-
-        // Successfully connected
-        return;
       } catch (err) {
         this.logDebug(`Connection attempt ${attempt}/${maxAttempts} failed, retrying in ${retryDelay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
       }
+
+      this.logDebug(`Connection attempt ${attempt}/${maxAttempts} failed across ports [${candidatePorts.join(', ')}], retrying in ${retryDelay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
     }
 
-    console.error(`[SERVER] Failed to connect to game interaction server after ${maxAttempts} attempts`);
+    console.error(
+      `[SERVER] Failed to connect to game interaction server after ${maxAttempts} attempts on ${interactionConfig.host} ports [${candidatePorts.join(', ')}]`
+    );
   }
 
   /**
@@ -487,6 +503,7 @@ class GodotServer {
       this.gameConnection.socket = null;
     }
     this.gameConnection.connected = false;
+    this.gameConnection.port = null;
     this.gameConnection.responseBuffer = '';
     if (this.gameConnection.pendingResolve) {
       this.gameConnection.pendingResolve({ error: 'Disconnected' });
@@ -3719,6 +3736,8 @@ class GodotServer {
         this.activeProcess.process.kill();
       }
 
+      const interactionConfig = loadInteractionServerConfig(args.projectPath);
+
       // Inject interaction server before launching
       this.injectInteractionServer(args.projectPath);
 
@@ -3779,7 +3798,7 @@ class GodotServer {
         content: [
           {
             type: 'text',
-            text: `Godot project started in debug mode. Use get_debug_output to see output. Game interaction server connecting on port ${this.INTERACTION_PORT}...`,
+            text: `Godot project started in debug mode. Use get_debug_output to see output. Game interaction server connecting via ${interactionConfig.host} port range starting at ${interactionConfig.port}...`,
           },
         ],
       };

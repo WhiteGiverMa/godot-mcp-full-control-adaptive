@@ -9,21 +9,122 @@ var _client: StreamPeerTCP
 var _buffer: String = ""
 var _busy: bool = false
 var _busy_since: float = 0.0
-const PORT: int = 9090
+const DEFAULT_HOST: String = "127.0.0.1"
+const DEFAULT_PORT: int = 9090
+const DEFAULT_ALLOW_PORT_FALLBACK: bool = false
+const DEFAULT_MAX_PORT_TRIES: int = 1
 const BUSY_TIMEOUT: float = 30.0
+const CONFIG_PATH: String = "res://config/mcp_server.json"
+const RUNTIME_METADATA_PATH: String = "user://mcp_server_runtime.json"
 var _key_map: Dictionary
 var _held_keys: Dictionary = {}
+var _listen_host: String = DEFAULT_HOST
+var _listen_port: int = DEFAULT_PORT
 
 func _ready() -> void:
 	# Ensure MCP server keeps processing even when game is paused
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_init_key_map()
-	_server = TCPServer.new()
-	var err: int = _server.listen(PORT, "127.0.0.1")
+	var config: Dictionary = _load_server_config()
+	var err: int = _listen_with_config(config)
 	if err != OK:
-		push_error("McpInteractionServer: Failed to listen on port %d, error: %d" % [PORT, err])
+		_write_runtime_metadata(false, err)
+		push_error("McpInteractionServer: Failed to listen on %s starting at port %d, error: %d" % [_listen_host, int(config.get("port", DEFAULT_PORT)), err])
 		return
-	print("McpInteractionServer: Listening on 127.0.0.1:%d" % PORT)
+	_write_runtime_metadata(true)
+	print("McpInteractionServer: Listening on %s:%d" % [_listen_host, _listen_port])
+
+
+func _exit_tree() -> void:
+	if _server != null and _server.is_listening():
+		_server.stop()
+	_write_runtime_metadata(false)
+
+
+func _load_server_config() -> Dictionary:
+	var config: Dictionary = {
+		"host": DEFAULT_HOST,
+		"port": DEFAULT_PORT,
+		"allow_port_fallback": DEFAULT_ALLOW_PORT_FALLBACK,
+		"max_port_tries": DEFAULT_MAX_PORT_TRIES,
+	}
+	if not FileAccess.file_exists(CONFIG_PATH):
+		return config
+
+	var file := FileAccess.open(CONFIG_PATH, FileAccess.READ)
+	if file == null:
+		push_warning("McpInteractionServer: Failed to open %s, using defaults" % CONFIG_PATH)
+		return config
+
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	if not parsed is Dictionary:
+		push_warning("McpInteractionServer: Invalid config JSON in %s, using defaults" % CONFIG_PATH)
+		return config
+
+	var parsed_config: Dictionary = parsed
+	var host: String = str(parsed_config.get("host", DEFAULT_HOST)).strip_edges()
+	if host.is_empty():
+		host = DEFAULT_HOST
+	var port: int = int(parsed_config.get("port", DEFAULT_PORT))
+	if port < 1 or port > 65535:
+		port = DEFAULT_PORT
+	var max_port_tries: int = int(parsed_config.get("max_port_tries", DEFAULT_MAX_PORT_TRIES))
+	if max_port_tries < 1:
+		max_port_tries = DEFAULT_MAX_PORT_TRIES
+	config["host"] = host
+	config["port"] = port
+	config["allow_port_fallback"] = bool(parsed_config.get("allow_port_fallback", DEFAULT_ALLOW_PORT_FALLBACK))
+	config["max_port_tries"] = max_port_tries
+	return config
+
+
+func _listen_with_config(config: Dictionary) -> int:
+	_listen_host = str(config.get("host", DEFAULT_HOST))
+	_listen_port = int(config.get("port", DEFAULT_PORT))
+	var allow_port_fallback: bool = bool(config.get("allow_port_fallback", DEFAULT_ALLOW_PORT_FALLBACK))
+	var max_port_tries: int = int(config.get("max_port_tries", DEFAULT_MAX_PORT_TRIES))
+	if max_port_tries < 1:
+		max_port_tries = DEFAULT_MAX_PORT_TRIES
+	var attempts: int = max_port_tries if allow_port_fallback else 1
+	var last_err: int = ERR_CANT_CREATE
+
+	for offset in range(attempts):
+		var candidate_port: int = _listen_port + offset
+		if candidate_port > 65535:
+			break
+		var candidate_server: TCPServer = TCPServer.new()
+		var err: int = candidate_server.listen(candidate_port, _listen_host)
+		if err == OK:
+			_server = candidate_server
+			_listen_port = candidate_port
+			if offset > 0:
+				push_warning("McpInteractionServer: Port %d unavailable, fell back to %d" % [int(config.get("port", DEFAULT_PORT)), candidate_port])
+			return OK
+		last_err = err
+
+	return last_err
+
+
+func _write_runtime_metadata(listening: bool, err: int = OK) -> void:
+	var metadata: Dictionary = {
+		"host": _listen_host,
+		"port": _listen_port,
+		"listening": listening,
+		"allow_port_fallback": false,
+		"updated_at_unix_ms": Time.get_unix_time_from_system() * 1000.0,
+	}
+	if FileAccess.file_exists(CONFIG_PATH):
+		var config := _load_server_config()
+		metadata["allow_port_fallback"] = bool(config.get("allow_port_fallback", false))
+		metadata["max_port_tries"] = int(config.get("max_port_tries", DEFAULT_MAX_PORT_TRIES))
+	if err != OK:
+		metadata["error"] = err
+
+	var file := FileAccess.open(RUNTIME_METADATA_PATH, FileAccess.WRITE)
+	if file == null:
+		push_warning("McpInteractionServer: Failed to write runtime metadata to %s" % RUNTIME_METADATA_PATH)
+		return
+	file.store_string(JSON.stringify(metadata, "\t"))
 
 
 func _process(_delta: float) -> void:

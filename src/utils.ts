@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
+
 /**
  * Shared utilities for the Godot MCP server.
  * Pure functions extracted for testability.
@@ -6,6 +9,20 @@
 export interface OperationParams {
   [key: string]: any;
 }
+
+export interface InteractionServerConfig {
+  host: string;
+  port: number;
+  allowPortFallback: boolean;
+  maxPortTries: number;
+}
+
+export const DEFAULT_INTERACTION_SERVER_CONFIG: InteractionServerConfig = {
+  host: '127.0.0.1',
+  port: 9090,
+  allowPortFallback: false,
+  maxPortTries: 1,
+};
 
 export const PARAMETER_MAPPINGS: Record<string, string> = {
   'project_path': 'projectPath',
@@ -231,4 +248,71 @@ export function isGodot44OrLater(version: string): boolean {
     return major > 4 || (major === 4 && minor >= 4);
   }
   return false;
+}
+
+export function parseInteractionServerConfig(raw: unknown): InteractionServerConfig {
+  const defaults = DEFAULT_INTERACTION_SERVER_CONFIG;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ...defaults };
+  }
+
+  const data = raw as Record<string, unknown>;
+  const host = typeof data.host === 'string' && data.host.trim().length > 0
+    ? data.host.trim()
+    : defaults.host;
+
+  const portValue = Number(data.port);
+  const port = Number.isInteger(portValue) && portValue >= 1 && portValue <= 65535
+    ? portValue
+    : defaults.port;
+
+  const allowPortFallback = typeof data.allow_port_fallback === 'boolean'
+    ? data.allow_port_fallback
+    : typeof data.allowPortFallback === 'boolean'
+      ? data.allowPortFallback
+      : defaults.allowPortFallback;
+
+  const maxPortTriesValue = Number(
+    data.max_port_tries ?? data.maxPortTries ?? defaults.maxPortTries,
+  );
+  const maxPortTries = Number.isInteger(maxPortTriesValue) && maxPortTriesValue > 0
+    ? maxPortTriesValue
+    : defaults.maxPortTries;
+
+  return {
+    host,
+    port,
+    allowPortFallback,
+    maxPortTries,
+  };
+}
+
+export function getInteractionPortCandidates(config: InteractionServerConfig): number[] {
+  const maxPort = 65535;
+  const ports: number[] = [];
+  const attempts = config.allowPortFallback ? config.maxPortTries : 1;
+
+  for (let offset = 0; offset < attempts; offset += 1) {
+    const candidate = config.port + offset;
+    if (candidate > maxPort) {
+      break;
+    }
+    ports.push(candidate);
+  }
+
+  return ports.length > 0 ? ports : [DEFAULT_INTERACTION_SERVER_CONFIG.port];
+}
+
+export function loadInteractionServerConfig(projectPath: string): InteractionServerConfig {
+  const configPath = join(projectPath, 'config', 'mcp_server.json');
+  if (!existsSync(configPath)) {
+    return { ...DEFAULT_INTERACTION_SERVER_CONFIG };
+  }
+
+  try {
+    const raw = JSON.parse(readFileSync(configPath, 'utf8'));
+    return parseInteractionServerConfig(raw);
+  } catch {
+    return { ...DEFAULT_INTERACTION_SERVER_CONFIG };
+  }
 }
