@@ -190,6 +190,7 @@ The original godot-mcp provided 20 tools for basic project management and scene 
 
 ### Robustness Improvements
 - **Reentrancy guard** - Prevents concurrent command processing during async operations
+- **Config-driven localhost port fallback** - Runtime TCP server can fall back to nearby ports when the configured port is unavailable, and the Node client now scans the same configured range
 - **Full type conversion** - Supports Vector2/3, Color, Quaternion, Basis, Transform2D/3D, AABB, Rect2, and all packed array types
 - **Smart property type detection** - Uses node's `get_property_list()` for automatic type conversion
 - **PackedArray serialization** - Proper JSON arrays instead of string fallback
