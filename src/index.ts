@@ -1124,7 +1124,7 @@ class GodotServer {
             required: [],
           },
         },
-{
+        {
           name: 'game_eval',
           description: 'Execute GDScript in the running game. Use "return" for values.',
           inputSchema: {
@@ -1133,6 +1133,10 @@ class GodotServer {
               code: {
                 type: 'string',
                 description: 'GDScript code to execute. Use "return" to return values.',
+              },
+              timeoutSeconds: {
+                type: 'number',
+                description: 'Optional execution timeout in seconds. Clamped below the server busy timeout.',
               },
             },
             required: ['code'],
@@ -4600,7 +4604,16 @@ class GodotServer {
   private async handleGameEval(args: any) {
     args = normalizeParameters(args || {});
     if (!args.code) return createErrorResponse('code parameter is required.');
-    return this.gameCommand('eval', args, a => ({ code: a.code }), 30000);
+    const timeoutSeconds = args.timeoutSeconds !== undefined ? Number(args.timeoutSeconds) : 28;
+    if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) {
+      return createErrorResponse('timeoutSeconds must be a positive number.');
+    }
+    const clampedTimeoutSeconds = Math.min(timeoutSeconds, 29);
+    const timeoutMs = Math.ceil(clampedTimeoutSeconds * 1000) + 2000;
+    return this.gameCommand('eval', args, a => ({
+      code: a.code,
+      timeout_seconds: clampedTimeoutSeconds,
+    }), timeoutMs);
   }
 
   private async handleGameGetProperty(args: any) {

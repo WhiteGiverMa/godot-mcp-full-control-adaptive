@@ -128,10 +128,20 @@ describe('Game command handlers — argument transforms', () => {
 
   // game_eval
   describe('handleGameEval', () => {
-    it('passes code parameter', () => {
+    it('passes code parameter with default timeout', () => {
       const args = normalizeParameters({ code: 'get_tree().root.name' });
-      const r = fakeGameCommand(true, true, args, a => ({ code: a.code }));
-      expect(r.commandArgs).toEqual({ code: 'get_tree().root.name' });
+      const timeoutSeconds = args.timeoutSeconds !== undefined ? Number(args.timeoutSeconds) : 28;
+      const clampedTimeoutSeconds = Math.min(timeoutSeconds, 29);
+      const r = fakeGameCommand(true, true, args, a => ({ code: a.code, timeout_seconds: clampedTimeoutSeconds }));
+      expect(r.commandArgs).toEqual({ code: 'get_tree().root.name', timeout_seconds: 28 });
+    });
+
+    it('passes custom timeoutSeconds to runtime timeout_seconds', () => {
+      const args = normalizeParameters({ code: 'return 1', timeoutSeconds: 12 });
+      const timeoutSeconds = args.timeoutSeconds !== undefined ? Number(args.timeoutSeconds) : 28;
+      const clampedTimeoutSeconds = Math.min(timeoutSeconds, 29);
+      const r = fakeGameCommand(true, true, args, a => ({ code: a.code, timeout_seconds: clampedTimeoutSeconds }));
+      expect(r.commandArgs).toEqual({ code: 'return 1', timeout_seconds: 12 });
     });
   });
 

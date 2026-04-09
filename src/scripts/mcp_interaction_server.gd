@@ -543,13 +543,23 @@ func _cmd_eval(params: Dictionary) -> void:
 	if code.is_empty():
 		_send_response({"error": "No code provided"})
 		return
+	var timeout_seconds: float = clampf(float(params.get("timeout_seconds", BUSY_TIMEOUT - 2.0)), 0.1, BUSY_TIMEOUT - 1.0)
 
 	# Wrap user code in a function so we can capture the return value
 	var script_source: String = """extends Node
 
-func execute():
+func execute(timeout_seconds: float):
 	var __result = null
-	__result = await _run()
+	var __finished := false
+	var __runner := func():
+		__result = await _run()
+		__finished = true
+	__runner.call_deferred()
+	var __deadline := Time.get_ticks_msec() / 1000.0 + timeout_seconds
+	while not __finished and Time.get_ticks_msec() / 1000.0 < __deadline:
+		await get_tree().process_frame
+	if not __finished:
+		return {"__eval_timed_out": true}
 	return __result
 
 func _run():
@@ -571,9 +581,12 @@ func _run():
 
 	var result: Variant = null
 	if temp_node.has_method("execute"):
-		result = await temp_node.execute()
+		result = await temp_node.execute(timeout_seconds)
 
 	temp_node.queue_free()
+	if result is Dictionary and result.get("__eval_timed_out", false):
+		_send_response({"error": "Eval execution timed out after %.1fs" % timeout_seconds})
+		return
 	_send_response({"success": true, "result": _variant_to_json(result)})
 
 
